@@ -1147,6 +1147,11 @@ func (session *Session) onFrameComplete(header FrameHeader) {
 			session.connectionError(ErrCodeEnhanceYourCalm, "control frame quota exceeded")
 			return
 		}
+	} else {
+		// Bound control-frame floods without imposing a lifetime limit on a
+		// healthy persistent connection. Message-bearing traffic resets the
+		// consecutive-control-frame budget.
+		session.controlFrames = 0
 	}
 	if header.Type == FrameData {
 		stream := session.streams[header.StreamID]

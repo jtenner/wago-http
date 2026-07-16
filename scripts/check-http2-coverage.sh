@@ -35,7 +35,7 @@ check() {
 check '/http2/frame.go:' 'http2/frame.go' 100
 check '/http2/hpack.go:' 'http2/hpack.go' 98
 check '/http2/request/request.go:' 'http2/request/request.go' 97
-check '/http2/session.go:' 'http2/session.go' 72
-check '/http2/abi.go:' 'http2/abi.go' 74
-check '/http2/request/transport.go:' 'http2/request/transport.go' 61
-check '/http2/server/server.go:' 'http2/server/server.go' 59
+check '/http2/session.go:' 'http2/session.go' 83
+check '/http2/abi.go:' 'http2/abi.go' 85
+check '/http2/request/transport.go:' 'http2/request/transport.go' 86
+check '/http2/server/server.go:' 'http2/server/server.go' 91

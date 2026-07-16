@@ -39,27 +39,42 @@ func BenchmarkSessionFlowControlledUpload(b *testing.B) {
 	for _, size := range []int{64 << 10, 1 << 20} {
 		b.Run(sessionBenchmarkName(size), func(b *testing.B) {
 			body := make([]byte, size)
-			limits := SessionLimits{MaxStreams: ^uint32(0) >> 1, MaxQueuedOutputBytes: 2 << 20, MaxQueuedEventBytes: 2 << 20}
+			limits := SessionLimits{MaxStreams: ^uint32(0) >> 1, MaxConcurrentStreams: 1024, MaxQueuedOutputBytes: 2 << 20, MaxQueuedEventBytes: 2 << 20}
+			client, _ := NewSession(RoleClient, limits)
+			server, _ := NewSession(RoleServer, limits)
+			benchmarkPump(client, server)
+			benchmarkPump(server, client)
+			benchmarkDrain(client)
+			benchmarkDrain(server)
+			request := []HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: "x"}, {Name: ":path", Value: "/"}}
+			response := []HeaderField{{Name: ":status", Value: "204"}}
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
+			b.ResetTimer()
 			for iteration := 0; iteration < b.N; iteration++ {
-				client, _ := NewSession(RoleClient, limits)
-				server, _ := NewSession(RoleServer, limits)
-				benchmarkPump(client, server)
-				benchmarkPump(server, client)
-				benchmarkDrain(client)
-				benchmarkDrain(server)
-				id, _ := client.OpenStream([]HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: "x"}, {Name: ":path", Value: "/"}}, false)
+				id, _ := client.OpenStream(request, false)
 				offset := 0
 				for offset < len(body) {
-					n, _ := client.SendData(id, body[offset:], false)
+					n, err := client.SendData(id, body[offset:], false)
+					if err != nil && err != ErrWouldBlock {
+						b.Fatal(err)
+					}
 					offset += n
 					benchmarkPump(client, server)
 					benchmarkDrain(server)
 					benchmarkPump(server, client)
 					benchmarkDrain(client)
 				}
-				_, _ = client.SendData(id, nil, true)
+				if _, err := client.SendData(id, nil, true); err != nil {
+					b.Fatal(err)
+				}
+				benchmarkPump(client, server)
+				benchmarkDrain(server)
+				if err := server.SendHeaders(id, response, true); err != nil {
+					b.Fatal(err)
+				}
+				benchmarkPump(server, client)
+				benchmarkDrain(client)
 				benchmarkSessionSink += uint64(offset)
 			}
 		})

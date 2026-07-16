@@ -35,6 +35,7 @@ type Transport struct {
 	eventBuffer     uint32
 	maxResponseBody uint64
 	pushHandler     func(PushRequest) (*Callbacks, bool)
+	bodyBuffers     sync.Pool
 
 	mu        sync.Mutex
 	pending   map[uint32]*transportExchange
@@ -69,7 +70,7 @@ func NewTransport(stream Stream, options TransportOptions) (*Transport, error) {
 	}
 	eventBuffer := options.EventBuffer
 	if eventBuffer == 0 {
-		eventBuffer = 128
+		eventBuffer = 16
 	}
 	if eventBuffer > 1<<16 {
 		return nil, ErrInvalidRequest
@@ -93,6 +94,7 @@ func NewTransport(stream Stream, options TransportOptions) (*Transport, error) {
 		window:          make(chan struct{}, 1),
 		done:            make(chan struct{}),
 	}
+	transport.bodyBuffers.New = func() any { return make([]byte, 16<<10) }
 	transport.mu.Lock()
 	err = transport.flushLocked()
 	transport.mu.Unlock()
@@ -196,7 +198,13 @@ func (transport *Transport) Do(ctx context.Context, request Request, callbacks *
 }
 
 func (transport *Transport) sendBody(ctx context.Context, streamID uint32, body io.Reader, trailers []Header, exchange *transportExchange) error {
-	buffer := make([]byte, 16<<10)
+	buffer, _ := transport.bodyBuffers.Get().([]byte)
+	if cap(buffer) < 16<<10 {
+		buffer = make([]byte, 16<<10)
+	} else {
+		buffer = buffer[:16<<10]
+	}
+	defer transport.bodyBuffers.Put(buffer)
 	for {
 		read, readErr := body.Read(buffer)
 		if read < 0 || read > len(buffer) {

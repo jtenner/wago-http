@@ -100,13 +100,23 @@ func TestTransportPersistentMultiplexingAndStreamingBody(t *testing.T) {
 		}
 	}
 
+	var trailerOnlyBody bytes.Buffer
+	response, err := transport.Do(nil, Request{
+		Method: []byte("GET"), Scheme: []byte("http"), Authority: []byte("example.test"), Path: []byte("/trailers"),
+		Trailers: []Header{{Name: []byte("x-finished"), Value: []byte("yes")}},
+	}, &Callbacks{Body: func(data []byte) { trailerOnlyBody.Write(data) }})
+	if err != nil || response.Status != 200 || trailerOnlyBody.String() != "0" {
+		t.Fatalf("trailer-only response=%+v body=%q err=%v", response, trailerOnlyBody.String(), err)
+	}
+
 	large := bytes.Repeat([]byte("x"), 200000)
 	var responseBody bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	response, err := transport.Do(ctx, Request{
+	response, err = transport.Do(ctx, Request{
 		Method: []byte("POST"), Scheme: []byte("http"), Authority: []byte("example.test"), Path: []byte("/upload"),
 		BodyReader: bytes.NewReader(large), BodyLength: int64(len(large)), HasBodyLength: true,
+		Trailers: []Header{{Name: []byte("x-upload-complete"), Value: []byte("yes")}},
 	}, &Callbacks{Body: func(data []byte) { responseBody.Write(data) }})
 	if err != nil {
 		t.Fatal(err)

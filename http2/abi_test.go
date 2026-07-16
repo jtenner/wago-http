@@ -2,6 +2,7 @@ package http2
 
 import (
 	"encoding/binary"
+	"errors"
 	"sync"
 	"testing"
 
@@ -194,6 +195,97 @@ func TestABIConcurrentSerializedAccess(t *testing.T) {
 		}()
 	}
 	wait.Wait()
+}
+
+func TestABIErrorAndMemoryCoverage(t *testing.T) {
+	manager := newABIManager(registerConfig{session: SessionLimits{MaxQueuedOutputBytes: 256, Header: HeaderLimits{MaxHeaders: 2, MaxFieldBytes: 8, MaxHeaderListBytes: 48}}})
+	host := &abiTestHost{instance: &wago.Instance{}, memory: make([]byte, 256)}
+	handle := abiOpen(t, manager, host, RoleClient)
+	result := []uint64{99}
+
+	manager.streamOpen(host, []uint64{uint64(handle), 250, 1, 0, 0}, result)
+	if result[0] == uint64(wagonet.StatusOK) {
+		t.Fatal("bad stream_open memory")
+	}
+	manager.streamHeaders(host, []uint64{uint64(handle), 1, 250, 1, 0}, result)
+	if result[0] == uint64(wagonet.StatusOK) {
+		t.Fatal("bad stream_headers memory")
+	}
+	manager.streamData(host, []uint64{uint64(handle), 1, 255, 2, 0, 0}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("stream_data=%d", result[0])
+	}
+	manager.streamPush(host, []uint64{uint64(handle), 1, 250, 1, 0}, result)
+	if result[0] == uint64(wagonet.StatusOK) {
+		t.Fatal("bad stream_push memory")
+	}
+	manager.streamPriorityUpdate(host, []uint64{uint64(handle), 1, 255, 2}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("priority=%d", result[0])
+	}
+	manager.sessionSettings(host, []uint64{uint64(handle), 255, 1}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("settings=%d", result[0])
+	}
+	manager.sessionPing(host, []uint64{uint64(handle), 252}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("ping=%d", result[0])
+	}
+	manager.sessionGoAway(host, []uint64{uint64(handle), 0, 255, 2}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("goaway=%d", result[0])
+	}
+	manager.eventNext(host, []uint64{uint64(handle), 250}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("event_next=%d", result[0])
+	}
+	manager.eventData(host, []uint64{uint64(handle), 0, 1, 4}, result)
+	if result[0] != uint64(wagonet.StatusInvalidState) {
+		t.Fatalf("event_data state=%d", result[0])
+	}
+	manager.eventHeader(host, []uint64{uint64(handle), 0, 0, 1, 4, 8, 1, 12}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("event_header index=%d", result[0])
+	}
+	manager.eventSetting(host, []uint64{uint64(handle), 0, 0}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("event_setting index=%d", result[0])
+	}
+
+	manager.mu.Lock()
+	abi := manager.instances[host.instance].sessions[handle]
+	manager.mu.Unlock()
+	abi.mu.Lock()
+	abi.current = Event{Type: EventHeaders, Headers: []HeaderField{{Name: "long-name", Value: "long-value"}}, Settings: []Setting{{ID: SettingHeaderTableSize, Value: 1}}, Data: []byte("data")}
+	abi.hasCurrent = true
+	abi.mu.Unlock()
+	manager.eventData(host, []uint64{uint64(handle), 255, 2, 0}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("event_data memory=%d", result[0])
+	}
+	manager.eventHeader(host, []uint64{uint64(handle), 0, 0, 2, 4, 8, 2, 12}, result)
+	if result[0] != uint64(wagonet.StatusMessageTooLarge) {
+		t.Fatalf("event_header small=%d", result[0])
+	}
+	manager.eventSetting(host, []uint64{uint64(handle), 0, 252}, result)
+	if result[0] != uint64(wagonet.StatusInvalidArgument) {
+		t.Fatalf("event_setting memory=%d", result[0])
+	}
+
+	for _, err := range []error{nil, ErrWouldBlock, ErrStreamNotFound, ErrInvalidRole, ErrInvalidHeaders, ErrStreamState, ErrSessionClosed, ErrSessionFailed, ErrStreamLimit, ErrOutputLimit, ErrEventLimit, ErrStreamIDExhausted, errors.New("io")} {
+		_ = statusForError(err)
+	}
+	if _, status := readABIHeaders(host.memory, 0, 3, HeaderLimits{MaxHeaders: 2}); status != wagonet.StatusResourceLimit {
+		t.Fatalf("header count=%d", status)
+	}
+	if _, status := readABIHeaders(host.memory, 255, 1, HeaderLimits{}); status != wagonet.StatusInvalidArgument {
+		t.Fatalf("header pointer=%d", status)
+	}
+	binary.LittleEndian.PutUint32(host.memory[0:4], 32)
+	binary.LittleEndian.PutUint32(host.memory[4:8], 9)
+	if _, status := readABIHeaders(host.memory, 0, 1, HeaderLimits{MaxFieldBytes: 8}); status != wagonet.StatusInvalidArgument {
+		t.Fatalf("field size=%d", status)
+	}
 }
 
 func TestABIRejectsBoundsHandlesAndQuotas(t *testing.T) {
