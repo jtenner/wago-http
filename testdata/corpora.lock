@@ -1,5 +1,7 @@
 # name|repository|revision|license|purpose
 llhttp|https://github.com/nodejs/llhttp.git|01e105a30fd06e248bc8ac73c4adb34a63d4114a|MIT|HTTP/1 request and response parser fixtures plus fuzz harnesses
+picohttpparser|https://github.com/h2o/picohttpparser.git|f4d94b48b31e0abae029ebeafcfd9ca0680ede58|MIT OR Perl|Independent HTTP/1 request response and chunked-decoder fixtures
+httparse|https://github.com/seanmonstar/httparse.git|a0fa552e4e0fa9a5914a736ef3a556748fef709b|Apache-2.0 OR MIT|Independent Rust HTTP/1 request response header and chunk-size fixtures
 h2spec|https://github.com/summerwind/h2spec.git|af83a65f0b6273ef38bf778d400d98892e7653d8|MIT|HTTP/2 and HPACK wire conformance runner
 hpack-test-case|https://github.com/http2jp/hpack-test-case.git|8a1406e7d14bfcb6c046021f13cc15cfb162726d|MIT|HPACK encoder and decoder interoperability stories
 autobahn-testsuite|https://github.com/crossbario/autobahn-testsuite.git|b8a5120d905e30470e4475785c48e4cedc35f6cd|Apache-2.0|RFC 6455 client and server conformance cases

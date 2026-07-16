@@ -800,14 +800,6 @@ func (p *Parser) parse(src []byte) (n int, code Code) {
 			}
 
 		case stateResReasonStart:
-			if src[n] == '\r' {
-				if !p.takeStartByte() {
-					return n, p.code
-				}
-				n++
-				p.state = stateResLineLF
-				continue
-			}
 			if src[n] != ' ' {
 				return n, p.fail(CodeInvalidStatus)
 			}

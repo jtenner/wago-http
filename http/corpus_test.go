@@ -18,7 +18,7 @@ func TestLLHTTPCorpus(t *testing.T) {
 	if _, err := os.Stat(root); err != nil {
 		t.Skip("pinned llhttp corpus not fetched; run scripts/fetch-test-corpora.sh")
 	}
-	verifyLLHTTPPin(t, root)
+	verifyCorpusPin(t, "llhttp", filepath.Dir(root))
 
 	files := []string{
 		"request/sample.md",
@@ -93,41 +93,6 @@ func TestLLHTTPCorpus(t *testing.T) {
 		t.Fatalf("only %d corpus cases tested (%d classified RFC deltas)", tested, skipped)
 	}
 	t.Logf("validated %d pinned llhttp cases; skipped %d documented RFC/ABI deltas", tested, skipped)
-}
-
-func verifyLLHTTPPin(t *testing.T, testRoot string) {
-	t.Helper()
-	lock, err := os.ReadFile(filepath.Join("..", "testdata", "corpora.lock"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var expected string
-	for _, line := range strings.Split(string(lock), "\n") {
-		fields := strings.Split(line, "|")
-		if len(fields) >= 3 && fields[0] == "llhttp" {
-			expected = fields[2]
-			break
-		}
-	}
-	if expected == "" {
-		t.Fatal("llhttp revision missing from testdata/corpora.lock")
-	}
-	gitDir := filepath.Join(filepath.Dir(testRoot), ".git")
-	head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	actual := strings.TrimSpace(string(head))
-	if strings.HasPrefix(actual, "ref: ") {
-		ref, err := os.ReadFile(filepath.Join(gitDir, strings.TrimPrefix(actual, "ref: ")))
-		if err != nil {
-			t.Fatal(err)
-		}
-		actual = strings.TrimSpace(string(ref))
-	}
-	if actual != expected {
-		t.Fatalf("llhttp corpus revision = %s, want pinned %s", actual, expected)
-	}
 }
 
 type llhttpCase struct {
@@ -324,6 +289,9 @@ func llhttpRFC9112Skip(test llhttpCase) string {
 		return "incomplete start line fixture"
 	}
 	firstLine := test.input[:firstLineEnd]
+	if test.kind == Response && len(firstLine) == len("HTTP/1.1 200") && bytes.HasPrefix(firstLine, []byte("HTTP/1.")) {
+		return "llhttp accepts a status-line without the RFC-required SP after status-code"
+	}
 	if !bytes.Contains(firstLine, []byte("HTTP/1.0")) && !bytes.Contains(firstLine, []byte("HTTP/1.1")) {
 		return "legacy or non-HTTP version"
 	}

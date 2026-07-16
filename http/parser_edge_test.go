@@ -196,7 +196,7 @@ func TestParserValidEdgeGrammar(t *testing.T) {
 		{name: "upgrade protocol list", kind: Request, input: "GET / HTTP/1.1\r\nHost: e\r\nConnection: keep-alive, Upgrade\r\nUpgrade: websocket/13, h2c\r\n\r\n", messages: 1},
 		{name: "upgrade optional whitespace states", kind: Request, input: "GET / HTTP/1.1\r\nHost: e\r\nConnection: close \t, Upgrade\r\nUpgrade: websocket \t, h2c/1 \t, custom\r\n\r\n", messages: 1},
 		{name: "CONNECT IPv6 authority", kind: Request, input: "CONNECT [2001:db8::1]:443 HTTP/1.1\r\nHost: [2001:db8::1]:443\r\n\r\n", messages: 1},
-		{name: "response empty reason", kind: Response, input: "HTTP/1.1 204\r\nServer: e\r\n\r\n", messages: 1},
+		{name: "response empty reason", kind: Response, input: "HTTP/1.1 204 \r\nServer: e\r\n\r\n", messages: 1},
 		{name: "response non-final transfer coding", kind: Response, input: "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip; q=\"x\"\r\n\r\ncompressed", finish: true, messages: 1},
 		{name: "HTTP 1.0 response keepalive", kind: Response, input: "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n", messages: 1},
 	}
@@ -262,6 +262,7 @@ func TestParserRejectsEdgeGrammar(t *testing.T) {
 		{name: "short status", kind: Response, input: "HTTP/1.1 2x0 OK\r\n", want: CodeInvalidStatus},
 		{name: "status below 100", kind: Response, input: "HTTP/1.1 099 Nope\r\n", want: CodeInvalidStatus},
 		{name: "missing status space", kind: Response, input: "HTTP/1.1x200 OK\r\n", want: CodeInvalidStartLine},
+		{name: "missing reason separator", kind: Response, input: "HTTP/1.1 200\r\n\r\n", want: CodeInvalidStatus},
 		{name: "bad reason control", kind: Response, input: "HTTP/1.1 200 O\x01K\r\n", want: CodeInvalidStatus},
 		{name: "bad response line ending", kind: Response, input: "HTTP/1.1 200 OK\rX", want: CodeInvalidLineEnding},
 		{name: "empty header name", kind: Request, input: "GET / HTTP/1.1\r\n: x\r\n", want: CodeInvalidHeaderName},

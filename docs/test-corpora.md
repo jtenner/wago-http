@@ -8,21 +8,26 @@ The exact source revisions and licenses are pinned in [`testdata/corpora.lock`](
 
 Primary specifications: RFC 9110 semantics and RFC 9112 message syntax and routing.
 
-Candidate: `nodejs/llhttp` (`test/request`, `test/response`, `test/fixtures`, and `test/fuzzers`; MIT). Its fixtures cover request and response parsing, methods, URI forms, connection handling, content length, transfer encoding, chunking, pipelining, upgrades, invalid syntax, pause/resume, and leniency modes.
+Pinned independent implementations:
+
+- `nodejs/llhttp` (MIT): request and response parsing, methods, URI forms, connection handling, content length, transfer encoding, chunking, pipelining, upgrades, invalid syntax, pause/resume, and leniency modes.
+- `h2o/picohttpparser` (MIT or Perl): an independently designed C parser used by H2O, with request, response, slow-read, invalid-byte, and chunked-decoder fixtures.
+- `seanmonstar/httparse` (Apache-2.0 or MIT): an independently designed Rust parser used in the Hyper ecosystem, with request, response, partial-input, header, and chunk-size fixtures.
 
 Current integration:
 
-1. `http/corpus_test.go` loads the pinned llhttp Markdown fixtures directly when `testdata/upstream/llhttp` is present and validates more than 100 strict, RFC-aligned request and response cases contiguously and at every input split point.
-2. Explicit adapter classifications exclude llhttp legacy protocol support, method-whitelist behavior, obsolete line folding, missing HTTP/1.1 Host enforcement, skip-body hooks, and tolerant response separators from the Wago oracle.
-3. Repository-owned tests cover framing precedence and request-smuggling regressions, byte-at-a-time feeds, every split point, informational/final response association, enforced callback reentrancy guards, cap-limited spans, cumulative chunk quotas, sticky failures, upgrades, trailers, truncation, independently fuzzed segmentation, and zero-allocation hot paths.
-4. `http/parser_benchmark_test.go` provides request and response edge-case matrices across contiguous, 64-byte, 16-byte, and byte-at-a-time delivery, plus callback-overhead, resource-limit, truncation, and malformed-framing benchmarks.
+1. `http/corpus_test.go` loads the pinned llhttp Markdown fixtures directly and validates 101 strict, RFC-aligned request and response cases at every input split point.
+2. `http/corpus_independent_test.go` extracts fixtures from the pinned picohttpparser C tests and httparse Rust unit and URI tests. It currently validates 64 picohttpparser and 179 httparse cases, also at every input split point.
+3. Explicit adapter classifications record legacy protocol support, bare-LF handling, obsolete line folding, missing HTTP/1.1 Host enforcement, permissive URI or start-line whitespace, parser-API framing differences, and finite-resource policy differences. The RFC remains the oracle when implementations disagree.
+4. Repository-owned tests cover framing precedence and request-smuggling regressions, byte-at-a-time feeds, every split point, informational/final response association, enforced callback reentrancy guards, cap-limited spans, cumulative chunk quotas, sticky failures, upgrades, trailers, truncation, independently fuzzed segmentation, and zero-allocation hot paths.
+5. `http/parser_benchmark_test.go` provides request and response edge-case matrices across contiguous, 64-byte, 16-byte, and byte-at-a-time delivery, plus callback-overhead, resource-limit, truncation, and malformed-framing benchmarks.
 
 Run the detailed parser benchmark suite with:
 
 ```sh
 go test ./http -run '^$' -bench 'BenchmarkParser' -benchmem -count=5
 ```
-4. Further differential testing should add another mature parser while keeping current RFC text as the oracle when implementations disagree.
+Together the three upstream adapters currently contribute 344 RFC-aligned cases before repository-owned tests and fuzzing. Future differential work should add full-message framing suites and live front-end/back-end parser pairs, especially for request-smuggling boundaries.
 
 ## HTTP/2 and HPACK
 
