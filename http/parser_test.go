@@ -211,6 +211,27 @@ func TestParserPipelinedResponseContexts(t *testing.T) {
 	}
 }
 
+func TestParserCloseDelimitedBodyLimitSegmentationInvariant(t *testing.T) {
+	input := []byte("HTTP/1.0 200 \r\n\r\n00")
+	const wantConsumed = len("HTTP/1.0 200 \r\n\r\n0")
+
+	contiguous := NewParser(Response, nil, Limits{MaxBodyBytes: 1})
+	consumed, code := contiguous.Parse(input)
+	if consumed != wantConsumed || code != CodeBodyTooLarge || contiguous.BodyBytes() != 1 {
+		t.Fatalf("contiguous = consumed %d, code %v, body %d", consumed, code, contiguous.BodyBytes())
+	}
+
+	segmented := NewParser(Response, nil, Limits{MaxBodyBytes: 1})
+	first, code := segmented.Parse(input[:wantConsumed])
+	if first != wantConsumed || code != CodeNone {
+		t.Fatalf("first segment = (%d, %v)", first, code)
+	}
+	second, code := segmented.Parse(input[wantConsumed:])
+	if second != 0 || code != CodeBodyTooLarge || segmented.BodyBytes() != 1 {
+		t.Fatalf("second segment = consumed %d, code %v, body %d", second, code, segmented.BodyBytes())
+	}
+}
+
 func TestParserResponseCloseDelimited(t *testing.T) {
 	var record recorder
 	callbacks := record.callbacks()
@@ -590,48 +611,143 @@ func BenchmarkParserByteAtATime(b *testing.B) {
 }
 
 func FuzzParserNoPanic(f *testing.F) {
-	f.Add(uint8(Request), benchmarkRequest, []byte{1, 2, 3, 5, 8})
-	f.Add(uint8(Response), []byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"), []byte{7, 1})
-	f.Fuzz(func(t *testing.T, rawKind uint8, input, segmentation []byte) {
+	f.Add(uint8(Request), benchmarkRequest, []byte{1, 2, 3, 5, 8}, []byte{})
+	f.Add(uint8(Request), benchmarkChunkedRequest, []byte{1}, []byte{16, 32, 64, 8, 4, 8, 16})
+	f.Add(uint8(Request), []byte("POST / HTTP/1.1\r\nHost: e\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"), []byte{31, 7}, []byte{8, 16, 8, 2})
+	f.Add(uint8(Response), []byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"), []byte{7, 1}, []byte{})
+	f.Add(uint8(Response), []byte("HTTP/1.1 200 OK\r\n\r\nclose-delimited"), []byte{3, 17}, []byte{32, 32, 8})
+	f.Add(uint8(Response), []byte("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\nopaque"), []byte{13, 1}, []byte{})
+	f.Fuzz(func(t *testing.T, rawKind uint8, input, segmentation, configuration []byte) {
 		kind := Kind(rawKind%2 + 1)
-		limits := Limits{MaxStartLineBytes: 1024, MaxHeaderBytes: 4096, MaxBodyBytes: 8192}
-
-		contiguous := NewParser(kind, nil, limits)
-		_, contiguousCode := contiguous.Parse(input)
-		if contiguousCode == CodeNone {
-			contiguousCode = contiguous.Finish()
+		limits := parserFuzzLimits(configuration)
+		contiguous, valid := runParserFuzz(kind, input, nil, false, limits)
+		if !valid {
+			t.Fatal("contiguous parser reported invalid consumption")
 		}
+		segmented, valid := runParserFuzz(kind, input, segmentation, true, limits)
+		if !valid {
+			t.Fatal("segmented parser reported invalid consumption")
+		}
+		withCallbacks, valid := runParserFuzz(kind, input, segmentation, true, limits, &noopCallbacks)
+		if !valid {
+			t.Fatal("callback parser reported invalid consumption")
+		}
+		if segmented != contiguous {
+			t.Fatalf("segmented result = %+v, contiguous = %+v", segmented, contiguous)
+		}
+		if withCallbacks != contiguous {
+			t.Fatalf("callback result = %+v, no callbacks = %+v", withCallbacks, contiguous)
+		}
+	})
+}
 
-		segmented := NewParser(kind, nil, limits)
+func FuzzParserLifecycleNoPanic(f *testing.F) {
+	f.Add(uint8(Request), benchmarkRequest, []byte{0, 1, 2, 3, 4, 5, 6})
+	f.Add(uint8(Response), []byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"), []byte{6, 6, 0, 1, 2})
+	f.Fuzz(func(t *testing.T, rawKind uint8, input, operations []byte) {
+		kind := Kind(rawKind%2 + 1)
+		parser := NewParser(kind, nil, Limits{MaxStartLineBytes: 1024, MaxHeaderBytes: 4096, MaxBodyBytes: 8192})
 		offset := 0
-		segment := 0
-		segmentedCode := CodeNone
-		for offset < len(input) && segmentedCode == CodeNone {
-			step := 1
+		for _, operation := range operations {
+			switch operation % 7 {
+			case 0, 1, 2:
+				remaining := len(input) - offset
+				step := 0
+				if remaining > 0 {
+					step = 1 + int(operation)%remaining
+				}
+				consumed, _ := parser.Parse(input[offset : offset+step])
+				if consumed < 0 || consumed > step {
+					t.Fatalf("consumed %d of %d", consumed, step)
+				}
+				offset += consumed
+			case 3:
+				consumed, _ := parser.Parse(nil)
+				if consumed != 0 {
+					t.Fatalf("empty Parse consumed %d", consumed)
+				}
+			case 4:
+				_ = parser.Finish()
+			case 5:
+				parser.Reset()
+				offset = 0
+			case 6:
+				parser.SetResponseContext(operation&0x40 != 0, operation&0x80 != 0)
+			}
+		}
+	})
+}
+
+type parserFuzzOutcome struct {
+	code                          Code
+	consumed                      int
+	messages, exchanges, body     uint64
+	method                        Method
+	status, major, minor          uint16
+	contentLength                 uint64
+	hasContentLength              bool
+	trailers, upgraded, keepAlive bool
+}
+
+func runParserFuzz(kind Kind, input, segmentation []byte, segmented bool, limits Limits, callbacks ...*Callbacks) (parserFuzzOutcome, bool) {
+	var selected *Callbacks
+	if len(callbacks) != 0 {
+		selected = callbacks[0]
+	}
+	parser := NewParser(kind, selected, limits)
+	offset := 0
+	segment := 0
+	code := CodeNone
+	for offset < len(input) && code == CodeNone {
+		step := len(input) - offset
+		if segmented {
+			if consumed, emptyCode := parser.Parse(nil); consumed != 0 || emptyCode != CodeNone {
+				return parserFuzzOutcome{}, false
+			}
+			step = 1
 			if len(segmentation) != 0 {
 				step += int(segmentation[segment%len(segmentation)]) % 31
 			}
 			if step > len(input)-offset {
 				step = len(input) - offset
 			}
-			consumed, code := segmented.Parse(input[offset : offset+step])
-			if consumed < 0 || consumed > step {
-				t.Fatalf("invalid consumption %d of %d", consumed, step)
-			}
-			if code == CodeNone && consumed != step {
-				t.Fatalf("successful parse consumed %d of %d", consumed, step)
-			}
-			offset += consumed
-			segmentedCode = code
-			segment++
 		}
-		if segmentedCode == CodeNone {
-			segmentedCode = segmented.Finish()
+		consumed, nextCode := parser.Parse(input[offset : offset+step])
+		if consumed < 0 || consumed > step || nextCode == CodeNone && consumed != step {
+			return parserFuzzOutcome{}, false
 		}
-		if segmentedCode != contiguousCode || segmented.MessageNumber() != contiguous.MessageNumber() {
-			t.Fatalf("segmented result = %v/%d, contiguous = %v/%d", segmentedCode, segmented.MessageNumber(), contiguousCode, contiguous.MessageNumber())
-		}
-	})
+		offset += consumed
+		code = nextCode
+		segment++
+	}
+	if code == CodeNone {
+		code = parser.Finish()
+	}
+	major, minor := parser.Version()
+	contentLength, hasContentLength := parser.ContentLength()
+	return parserFuzzOutcome{
+		code: code, consumed: offset, messages: parser.MessageNumber(), exchanges: parser.ExchangeNumber(),
+		body: parser.BodyBytes(), method: parser.Method(), status: parser.Status(), major: major, minor: minor,
+		contentLength: contentLength, hasContentLength: hasContentLength,
+		trailers: parser.Trailers(), upgraded: parser.Upgraded(), keepAlive: parser.KeepAlive(),
+	}, true
+}
+
+func parserFuzzLimits(configuration []byte) Limits {
+	if len(configuration) == 0 {
+		return Limits{MaxStartLineBytes: 1024, MaxHeaderBytes: 4096, MaxBodyBytes: 8192}
+	}
+	at := func(index int) uint64 { return uint64(configuration[index%len(configuration)]) }
+	return Limits{
+		MaxStartLineBytes:     1 + uint32(at(0))*8,
+		MaxHeaderBytes:        1 + uint32(at(1))*32,
+		MaxChunkLineBytes:     1 + uint32(at(2))*4,
+		MaxChunks:             1 + uint32(at(3)),
+		MaxChunkMetadataBytes: 1 + at(4)*16,
+		MaxHeaders:            1 + uint16(at(5)),
+		MaxHeaderNameBytes:    1 + uint16(at(6)),
+		MaxBodyBytes:          1 + at(7)*64,
+	}
 }
 
 func messageBody(messages []recordedMessage) string {

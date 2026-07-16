@@ -425,8 +425,6 @@ type Parser struct {
 	targetAuthorityPort    bool
 	ipLiteral              [maxIPLiteralBytes]byte
 	ipLiteralLen           uint16
-	versionMajorDigit      bool
-	versionMinorDigit      bool
 	fieldPos               uint16
 	fieldMask              uint16
 	field                  fieldKind
@@ -692,16 +690,10 @@ func (p *Parser) parse(src []byte) (n int, code Code) {
 			if p.literalPos == 5 {
 				p.major = 0
 				p.minor = 0
-				p.versionMajorDigit = false
-				p.versionMinorDigit = false
 				p.state = stateVersionMajor
 			}
 
 		case stateVersionMajor:
-			if p.versionMajorDigit {
-				p.state = stateVersionDot
-				continue
-			}
 			if src[n] < '0' || src[n] > '9' {
 				return n, p.fail(CodeInvalidVersion)
 			}
@@ -709,7 +701,6 @@ func (p *Parser) parse(src []byte) (n int, code Code) {
 				return n, p.code
 			}
 			p.major = uint16(src[n] - '0')
-			p.versionMajorDigit = true
 			n++
 			p.state = stateVersionDot
 
@@ -724,17 +715,14 @@ func (p *Parser) parse(src []byte) (n int, code Code) {
 			p.state = stateVersionMinor
 
 		case stateVersionMinor:
-			if !p.versionMinorDigit {
-				if src[n] < '0' || src[n] > '9' {
-					return n, p.fail(CodeInvalidVersion)
-				}
-				if !p.takeStartByte() {
-					return n, p.code
-				}
-				p.minor = uint16(src[n] - '0')
-				p.versionMinorDigit = true
-				n++
+			if src[n] < '0' || src[n] > '9' {
+				return n, p.fail(CodeInvalidVersion)
 			}
+			if !p.takeStartByte() {
+				return n, p.code
+			}
+			p.minor = uint16(src[n] - '0')
+			n++
 			if p.kind == Request {
 				p.state = stateReqLineCR
 			} else {
@@ -901,12 +889,8 @@ func (p *Parser) parse(src []byte) (n int, code Code) {
 			p.state = stateHeaderValueStart
 
 		case stateHeaderValueStart:
-			parseValue := p.field != fieldOther && p.field != fieldTrailer
 			for n < len(src) && (src[n] == ' ' || src[n] == '\t') {
 				if !p.takeHeaderByte() {
-					return n, p.code
-				}
-				if parseValue && !p.consumeFieldValue(src[n]) {
 					return n, p.code
 				}
 				n++
@@ -1017,17 +1001,23 @@ func (p *Parser) parse(src []byte) (n int, code Code) {
 			}
 
 		case stateCloseBody:
-			take := uint64(len(src) - n)
-			if !p.addBody(take) {
-				return n, p.code
+			available := uint64(len(src) - n)
+			take := available
+			bodyBudget := p.limits.MaxBodyBytes - p.bodyBytes
+			if take > bodyBudget {
+				take = bodyBudget
 			}
+			p.bodyBytes += take
 			bodyStart := n
-			n = len(src)
+			n += int(take)
 			if take != 0 && p.callbacks != nil && p.callbacks.Body != nil {
 				p.callbacks.Body(src[bodyStart:n:n])
 				if p.code != CodeNone {
 					return n, p.code
 				}
+			}
+			if take != available {
+				return n, p.fail(CodeBodyTooLarge)
 			}
 
 		case stateChunkSizeStart:
@@ -1171,9 +1161,6 @@ func (p *Parser) parse(src []byte) (n int, code Code) {
 			}
 			p.state = stateChunkSizeStart
 
-		case stateUpgrade:
-			return n, CodeUpgrade
-
 		default:
 			return n, p.fail(CodeInvalidStartLine)
 		}
@@ -1238,8 +1225,6 @@ func (p *Parser) beginMessage() {
 	p.targetAuthorityColon = false
 	p.targetAuthorityPort = false
 	p.ipLiteralLen = 0
-	p.versionMajorDigit = false
-	p.versionMinorDigit = false
 	p.hasContentLength = false
 	p.hasTransferEncoding = false
 	p.hasHost = false
@@ -1987,9 +1972,6 @@ func (p *Parser) finishUpgradeValue() bool {
 func (p *Parser) consumeHostValue(b byte) bool {
 	switch p.hostState {
 	case hostStart:
-		if b == ' ' || b == '\t' {
-			return true
-		}
 		if b == '[' {
 			p.hostNonEmpty = true
 			p.hostLiteralNonEmpty = false

@@ -19,12 +19,13 @@ Current integration:
 1. `http/corpus_test.go` loads the pinned llhttp Markdown fixtures directly and validates 101 strict, RFC-aligned request and response cases at every input split point.
 2. `http/corpus_independent_test.go` extracts fixtures from the pinned picohttpparser C tests and httparse Rust unit and URI tests. It currently validates 64 picohttpparser and 179 httparse cases, also at every input split point.
 3. Explicit adapter classifications record legacy protocol support, bare-LF handling, obsolete line folding, missing HTTP/1.1 Host enforcement, permissive URI or start-line whitespace, parser-API framing differences, and finite-resource policy differences. The RFC remains the oracle when implementations disagree.
-4. Repository-owned tests cover framing precedence and request-smuggling regressions, byte-at-a-time feeds, every split point, informational/final response association, enforced callback reentrancy guards, cap-limited spans, cumulative chunk quotas, sticky failures, upgrades, trailers, truncation, independently fuzzed segmentation, and zero-allocation hot paths.
+4. Repository-owned tests cover framing precedence and request-smuggling regressions, byte-at-a-time feeds, every split point, informational/final response association, enforced callback reentrancy guards, cap-limited spans, cumulative chunk quotas, sticky failures, upgrades, trailers, truncation, independently fuzzed segmentation and lifecycle operations, and zero-allocation hot paths. `http/parser.go` currently has 100% statement coverage; `scripts/check-http1-coverage.sh` enforces a minimum of 98%.
 5. `http/parser_benchmark_test.go` provides request and response edge-case matrices across contiguous, 64-byte, 16-byte, and byte-at-a-time delivery, plus callback-overhead, resource-limit, truncation, and malformed-framing benchmarks.
 
-Run the detailed parser benchmark suite with:
+Run the parser coverage gate and detailed benchmark suite with:
 
 ```sh
+scripts/check-http1-coverage.sh
 go test ./http -run '^$' -bench 'BenchmarkParser' -benchmem -count=5
 ```
 Together the three upstream adapters currently contribute 344 RFC-aligned cases before repository-owned tests and fuzzing. Future differential work should add full-message framing suites and live front-end/back-end parser pairs, especially for request-smuggling boundaries.
