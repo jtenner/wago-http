@@ -447,6 +447,8 @@ type Parser struct {
 	responseToHEAD      bool
 	responseToCONNECT   bool
 	parsing             bool
+	pauseAfterMessage   bool
+	paused              bool
 
 	contentLengthDigits   bool
 	contentLengthTrailing bool
@@ -558,21 +560,37 @@ func (p *Parser) message() Message {
 // consumed and more input may be supplied. On CodeUpgrade, n excludes bytes of
 // the upgraded protocol. Parse failures are sticky.
 func (p *Parser) Parse(src []byte) (n int, code Code) {
+	return p.runParse(src, false)
+}
+
+// ParseOne consumes at most one complete message from src. complete reports
+// that a message boundary was reached; n then excludes bytes belonging to the
+// next pipelined message. Informational and final responses each count as one
+// message. CodeUpgrade remains the successful terminal result for a validated
+// protocol switch. Parse failures are sticky.
+func (p *Parser) ParseOne(src []byte) (n int, complete bool, code Code) {
+	n, code = p.runParse(src, true)
+	return n, p.paused, code
+}
+
+func (p *Parser) runParse(src []byte, pauseAfterMessage bool) (n int, code Code) {
 	if p.parsing {
 		return 0, p.fail(CodeReentrantCall)
 	}
 	p.parsing = true
+	p.pauseAfterMessage = pauseAfterMessage
+	p.paused = false
 	if p.callbacks != nil {
-		return p.parseWithCallbackGuard(src)
+		defer func() {
+			p.pauseAfterMessage = false
+			p.parsing = false
+		}()
+		return p.parse(src)
 	}
 	n, code = p.parse(src)
+	p.pauseAfterMessage = false
 	p.parsing = false
 	return n, code
-}
-
-func (p *Parser) parseWithCallbackGuard(src []byte) (n int, code Code) {
-	defer func() { p.parsing = false }()
-	return p.parse(src)
 }
 
 func (p *Parser) parse(src []byte) (n int, code Code) {
@@ -584,6 +602,9 @@ func (p *Parser) parse(src []byte) (n int, code Code) {
 	}
 
 	for n < len(src) {
+		if p.paused {
+			return n, CodeNone
+		}
 		switch p.state {
 		case stateStart:
 			if p.kind == Request && src[n] == '\r' {
@@ -1463,6 +1484,7 @@ func (p *Parser) completeMessage() {
 	p.messageActive = false
 	p.trailers = false
 	p.state = stateStart
+	p.paused = p.pauseAfterMessage
 }
 
 func (p *Parser) fail(code Code) Code {
