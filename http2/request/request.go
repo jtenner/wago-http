@@ -1,6 +1,6 @@
-// Package request writes one bounded HTTP/2 request and performs a synchronous
-// exchange on stream 1 over a caller-owned byte stream. It does not dial,
-// close, or alter transport deadlines.
+// Package request provides bounded one-shot and persistent multiplexed HTTP/2
+// clients over caller-owned or caller-dialed byte streams. TLS, ALPN, and
+// deadline policy remain transport responsibilities.
 package request
 
 import (
@@ -57,6 +57,7 @@ type Request struct {
 	BodyReader    io.Reader
 	BodyLength    int64
 	HasBodyLength bool
+	ReplayBody    func() (io.Reader, error)
 	Trailers      []Header
 }
 
@@ -113,6 +114,29 @@ func (err *CompressionError) Error() string {
 }
 func (err *CompressionError) Unwrap() error { return ErrInvalidResponse }
 
+// StreamError reports a peer reset. REFUSED_STREAM before response headers is
+// safe for a replayable request to retry on another connection.
+type StreamError struct {
+	Code      h2.ErrorCode
+	Retryable bool
+}
+
+func (err *StreamError) Error() string {
+	return ErrStreamReset.Error() + ": " + strconv.FormatUint(uint64(err.Code), 10)
+}
+func (err *StreamError) Unwrap() error { return ErrStreamReset }
+
+// GoAwayError reports a draining peer connection.
+type GoAwayError struct {
+	LastStreamID uint32
+	Code         h2.ErrorCode
+}
+
+func (err *GoAwayError) Error() string {
+	return ErrGoAway.Error() + ": last stream " + strconv.FormatUint(uint64(err.LastStreamID), 10)
+}
+func (err *GoAwayError) Unwrap() error { return ErrGoAway }
+
 // Client bounds and executes one stream-1 exchange. A zero value is ready to
 // use. Request bodies are bounded by both MaxRequestBodyBytes and the 65,535
 // byte initial peer flow-control window because the request is written before
@@ -127,7 +151,7 @@ type Client struct {
 
 // Validate checks request syntax and finite body bounds.
 func (client Client) Validate(request Request) error {
-	if request.BodyReader != nil || request.HasBodyLength || len(request.Trailers) != 0 || len(request.Protocol) != 0 {
+	if request.BodyReader != nil || request.HasBodyLength || request.ReplayBody != nil || len(request.Trailers) != 0 || len(request.Protocol) != 0 {
 		return &ValidationError{Reason: "streaming bodies, trailers, and extended CONNECT require Transport"}
 	}
 	if !validMethod(request.Method) {

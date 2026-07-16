@@ -42,6 +42,7 @@ type Transport struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	err       error
+	goAway    *GoAwayError
 }
 
 type transportExchange struct {
@@ -119,6 +120,11 @@ func (transport *Transport) Do(ctx context.Context, request Request, callbacks *
 	transport.mu.Lock()
 	if transport.err != nil {
 		err = transport.err
+		transport.mu.Unlock()
+		return Response{}, err
+	}
+	if transport.goAway != nil {
+		err = transport.goAway
 		transport.mu.Unlock()
 		return Response{}, err
 	}
@@ -373,8 +379,9 @@ func (transport *Transport) dispatch(events []h2.Event) {
 		}
 		if event.StreamID == 0 {
 			if event.Type == h2.EventGoAway {
-				transport.fail(ErrGoAway)
-				return
+				transport.mu.Lock()
+				transport.goAway = &GoAwayError{LastStreamID: event.LastStreamID, Code: event.ErrorCode}
+				transport.mu.Unlock()
 			}
 			continue
 		}
@@ -555,7 +562,7 @@ func (exchange *transportExchange) consume(event h2.Event) error {
 			exchange.callbacks.ResponseComplete(exchange.response)
 		}
 	case h2.EventStreamReset:
-		return ErrStreamReset
+		return &StreamError{Code: event.ErrorCode, Retryable: event.ErrorCode == h2.ErrCodeRefusedStream && !exchange.finalHeaders}
 	}
 	return nil
 }

@@ -14,9 +14,22 @@ func TestCoveragePublicErrorAndIOPaths(t *testing.T) {
 	if got := (&ValidationError{Reason: "reason"}).Error(); got != ErrInvalidRequest.Error()+": reason" {
 		t.Fatalf("reason error=%q", got)
 	}
+	streamErr := &StreamError{Code: h2.ErrCodeRefusedStream, Retryable: true}
+	if !errors.Is(streamErr, ErrStreamReset) || streamErr.Error() == "" {
+		t.Fatalf("stream error=%v", streamErr)
+	}
+	goAway := &GoAwayError{LastStreamID: 3, Code: h2.ErrCodeNo}
+	if !errors.Is(goAway, ErrGoAway) || goAway.Error() == "" {
+		t.Fatalf("goaway=%v", goAway)
+	}
 
 	invalid := basicRequest()
 	invalid.Method = nil
+	withReplay := basicRequest()
+	withReplay.ReplayBody = func() (io.Reader, error) { return bytes.NewReader(nil), nil }
+	if err := (Client{}).Validate(withReplay); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ReplayBody validation=%v", err)
+	}
 	if _, err := (Client{}).Encode(nil, invalid); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("Encode invalid=%v", err)
 	}

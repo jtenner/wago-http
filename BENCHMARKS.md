@@ -1,22 +1,23 @@
 # HTTP/2 Performance Baseline
 
-This document records the first comprehensive performance baseline for the native HTTP/2 frame parser, HPACK decoder, and `http2/request` stream-1 client. The machine-readable Go benchmark output is committed at [`benchmarks/http2-baseline-2026-07-16.txt`](benchmarks/http2-baseline-2026-07-16.txt).
+This document records the comprehensive performance baseline for the native HTTP/2 frame parser, HPACK decoder, one-shot request client, and persistent connection session. Machine-readable output is committed at [`benchmarks/http2-baseline-2026-07-16.txt`](benchmarks/http2-baseline-2026-07-16.txt) and [`benchmarks/http2-session-baseline-2026-07-16.txt`](benchmarks/http2-session-baseline-2026-07-16.txt).
 
 ## Baseline identity
 
 | Property | Value |
 |---|---|
 | Date | July 16, 2026 |
-| Base Git HEAD | `fc0f31c` plus the uncommitted HTTP/2 implementation represented by source fingerprint below |
-| HTTP/2 source fingerprint | `7858f45de6a076170b423313e0dfc0e452ed5461a1eff932932ec58bcba6f27d` |
-| Raw result SHA-256 | `74699dc9da22eb5d7299fd4382f65eef1fcdfaecb48d66fc01224da1bb33e33f` |
+| Frame/HPACK/one-shot source revision | `82eb203ef44cd2635c64a82e4a34ee38ae8397c3` |
+| Persistent-session source revision | `afbd9e1` |
+| Frame/HPACK/one-shot raw SHA-256 | `74699dc9da22eb5d7299fd4382f65eef1fcdfaecb48d66fc01224da1bb33e33f` |
+| Persistent-session raw SHA-256 | `4a9851d927cdd6a3417d378c4a90f13202b9ffbeaf261ae6c4a520affa982235` |
 | OS | Debian GNU/Linux, Linux `6.12.95+deb13-amd64` |
 | Architecture | `linux/amd64`, `GOAMD64=v1`, CGO enabled |
 | CPU | AMD Ryzen 7 8845HS, 8 cores / 16 threads, up to 5.1 GHz |
 | Cache | 256 KiB L1d, 256 KiB L1i, 8 MiB L2, 16 MiB L3 |
 | Go | `go1.24.4 linux/amd64` |
 | Scheduling | CPU affinity fixed to logical CPU 4; `GOMAXPROCS=1` |
-| Samples | 10 per benchmark |
+| Samples | 10 per benchmark; 840 total samples across 84 scenarios |
 | Target duration | 250 ms per sample |
 | Race/checkptr | Disabled for performance run |
 
@@ -27,6 +28,11 @@ taskset -c 4 env GOMAXPROCS=1 \
   go test ./http2 ./http2/request \
   -run '^$' -bench '^Benchmark' -benchmem -benchtime=250ms -count=10 \
   | tee benchmarks/http2-baseline-2026-07-16.txt
+
+taskset -c 4 env GOMAXPROCS=1 \
+  go test ./http2 -run '^$' -bench '^BenchmarkSession' \
+  -benchmem -benchtime=250ms -count=10 \
+  | tee benchmarks/http2-session-baseline-2026-07-16.txt
 ```
 
 The tables report the median of ten samples. The range column preserves the observed minimum and maximum so future comparisons can distinguish likely signal from machine noise. `MB/s` is emitted by Go from each benchmark's declared wire-byte count.
@@ -119,6 +125,16 @@ The tables report the median of ten samples. The range column preserves the obse
 | `WriteRequest/body-64k` | 15.09 µs | 13.10 µs–16.19 µs | 4,356.6 | 192,696 | 36 |
 | `WriteRequest/get` | 709.15 ns | 678.50 ns–738.50 ns | 104.4 | 1,160 | 16 |
 | `WriteRequest/headers-32` | 13.37 µs | 13.19 µs–13.80 µs | 58.86 | 15,832 | 106 |
+## Persistent session engine
+
+| Benchmark | Median | Observed range | Median MB/s | B/op | allocs/op |
+|---|---:|---:|---:|---:|---:|
+| `SessionPersistentRoundTrip/1` | 1.448 µs | 1.436–1.469 µs | — | 400 | 4 |
+| `SessionPersistentRoundTrip/16` | 24.738 µs | 24.203–26.365 µs | — | 6,406 | 64 |
+| `SessionPersistentRoundTrip/100` | 242.961 µs | 240.173–262.697 µs | — | 40,117 | 400 |
+| `SessionFlowControlledUpload/65536` | 14.280 µs | 13.885–15.947 µs | 4,589.5 | 100,987 | 100 |
+| `SessionFlowControlledUpload/1048576` | 236.879 µs | 194.275–241.112 µs | 4,426.6 | 1,084,889 | 160 |
+
 ## Interpretation notes
 
 - The frame parser's no-callback DATA and extension-frame paths validate and advance borrowed payload spans without scanning every payload byte. Their very high reported MB/s is therefore a control-path throughput measurement, not memory-copy bandwidth.

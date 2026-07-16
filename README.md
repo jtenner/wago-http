@@ -142,7 +142,7 @@ response, err := request.Client{}.Do(conn, request.Request{
 })
 ```
 
-The packages own neither dialing nor TLS. Callers provide an established byte stream selected through h2c prior knowledge or TLS/ALPN in `github.com/wago-org/net`. The legacy one-shot client remains limited to the initial 65,535-byte send window; `Transport` and `server.Conn` perform concurrent input/output and support bodies and responses larger than the initial window.
+The packages own neither dialing nor TLS. Callers provide an established byte stream selected through cleartext HTTP/2 prior knowledge or TLS/ALPN in `github.com/wago-org/net`; HTTP/1.1 `Upgrade: h2c` is intentionally not exposed because capability selection happens before the HTTP/2 session starts. The legacy one-shot client remains limited to the initial 65,535-byte send window; `Transport` and `server.Conn` perform concurrent input/output and support bodies and responses larger than the initial window. `request.Pool` lazily dials persistent transports and retries replayable idempotent requests refused before response headers on a fresh connection.
 
 ## Wago HTTP/2 ABI
 

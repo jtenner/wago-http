@@ -195,6 +195,49 @@ func TestTransportServerPush(t *testing.T) {
 	}
 }
 
+func TestPoolRetriesRefusedStreamOnNewConnection(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		first, _ := listener.Accept()
+		if first != nil {
+			go func() {
+				connection, newErr := h2server.New(first, h2server.HandlerFuncs{OnEnd: func(writer *h2server.ResponseWriter) {
+					_ = writer.Reset(h2.ErrCodeRefusedStream)
+				}}, h2server.Options{})
+				if newErr == nil {
+					_ = connection.Serve()
+				} else {
+					_ = first.Close()
+				}
+			}()
+		}
+		second, _ := listener.Accept()
+		if second != nil {
+			connection, newErr := h2server.New(second, h2server.HandlerFuncs{OnEnd: func(writer *h2server.ResponseWriter) {
+				_ = writer.Headers([]h2.HeaderField{{Name: ":status", Value: "204"}}, true)
+			}}, h2server.Options{})
+			if newErr == nil {
+				_ = connection.Serve()
+			} else {
+				_ = second.Close()
+			}
+		}
+	}()
+	pool := &Pool{Dial: func(context.Context) (Stream, error) { return net.Dial("tcp", listener.Addr().String()) }}
+	defer pool.Close()
+	response, err := pool.Do(context.Background(), Request{Method: []byte("GET"), Scheme: []byte("http"), Authority: []byte("x"), Path: []byte("/")}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != 204 {
+		t.Fatalf("status=%d", response.Status)
+	}
+}
+
 func TestTransportContextCancellation(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
