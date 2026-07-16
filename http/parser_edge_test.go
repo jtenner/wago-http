@@ -168,6 +168,55 @@ func TestParserRejectsReentrancyFromEveryCallback(t *testing.T) {
 	}
 }
 
+func TestParserCallbackPanicRestoresLifecycleGuard(t *testing.T) {
+	tests := []struct {
+		name      string
+		kind      Kind
+		input     string
+		callbacks func() *Callbacks
+		finish    bool
+	}{
+		{
+			name: "response context", kind: Response, input: "HTTP/1.1 204 No Content\r\n\r\n",
+			callbacks: func() *Callbacks {
+				return &Callbacks{ResponseContext: func(uint64) (bool, bool) { panic("callback") }}
+			},
+		},
+		{
+			name: "parse callback", kind: Request, input: "GET / HTTP/1.1\r\nHost: e\r\n\r\n",
+			callbacks: func() *Callbacks {
+				return &Callbacks{HeaderName: func([]byte) { panic("callback") }}
+			},
+		},
+		{
+			name: "finish callback", kind: Response, input: "HTTP/1.1 200 OK\r\n\r\nbody", finish: true,
+			callbacks: func() *Callbacks {
+				return &Callbacks{MessageComplete: func(Message) { panic("callback") }}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parser := NewParser(test.kind, test.callbacks(), Limits{})
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Fatal("callback did not panic")
+					}
+				}()
+				_, _ = parser.Parse([]byte(test.input))
+				if test.finish {
+					_ = parser.Finish()
+				}
+			}()
+			parser.Reset()
+			if parser.Code() != CodeNone {
+				t.Fatalf("Reset after callback panic = %v", parser.Code())
+			}
+		})
+	}
+}
+
 func TestParserValidEdgeGrammar(t *testing.T) {
 	requestMethods := "GET / HTTP/1.1\r\nHost: e\r\n\r\n" +
 		"HEAD / HTTP/1.1\r\nHost: e\r\n\r\n" +

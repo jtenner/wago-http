@@ -99,7 +99,7 @@ Pinned opportunities for HTTP/1.1, HTTP/2 and HPACK, WebSocket, HTTP/3, QPACK, a
 scripts/fetch-test-corpora.sh
 ```
 
-No third-party corpus is vendored by default. When the pinned checkouts are present, `go test ./http` automatically runs RFC-audited adapters for llhttp, picohttpparser, and httparse—each fixture at every input split point—in addition to repository-owned fragmentation, limits, smuggling, lifecycle, fuzz, benchmark, and allocation tests.
+No third-party corpus is vendored by default. When the pinned checkouts are present, `go test ./http` automatically runs RFC-audited adapters for llhttp, picohttpparser, and httparse—each fixture at every input split point—in addition to repository-owned fragmentation, limits, smuggling, callback-safety, lifecycle, grammar-generated and structured fuzz, benchmark, and allocation tests.
 
 ## Development
 

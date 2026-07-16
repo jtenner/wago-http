@@ -617,6 +617,8 @@ func FuzzParserNoPanic(f *testing.F) {
 	f.Add(uint8(Response), []byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"), []byte{7, 1}, []byte{})
 	f.Add(uint8(Response), []byte("HTTP/1.1 200 OK\r\n\r\nclose-delimited"), []byte{3, 17}, []byte{32, 32, 8})
 	f.Add(uint8(Response), []byte("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\nopaque"), []byte{13, 1}, []byte{})
+	f.Add(uint8(Request), []byte("POST / HTTP/1.1\r\nHost: e\r\nContent-Length: 18446744073709551615\r\n\r\n"), []byte{1}, []byte{255, 255, 255, 255, 255, 255, 255, 255})
+	f.Add(uint8(Response), []byte("HTTP/1.1 200 OK\r\n\r\nbody"), []byte{1}, []byte{254, 254, 254, 254, 254, 254, 254, 254})
 	f.Fuzz(func(t *testing.T, rawKind uint8, input, segmentation, configuration []byte) {
 		kind := Kind(rawKind%2 + 1)
 		limits := parserFuzzLimits(configuration)
@@ -637,6 +639,15 @@ func FuzzParserNoPanic(f *testing.F) {
 		}
 		if withCallbacks != contiguous {
 			t.Fatalf("callback result = %+v, no callbacks = %+v", withCallbacks, contiguous)
+		}
+		if contiguous.code == CodeNone || contiguous.code == CodeUpgrade {
+			expanded, valid := runParserFuzz(kind, input, segmentation, true, parserFuzzExpandedLimits())
+			if !valid {
+				t.Fatal("expanded-limit parser reported invalid consumption")
+			}
+			if expanded != contiguous {
+				t.Fatalf("expanded limits changed successful parse: expanded = %+v, original = %+v", expanded, contiguous)
+			}
 		}
 	})
 }
@@ -695,6 +706,10 @@ func runParserFuzz(kind Kind, input, segmentation []byte, segmented bool, limits
 		selected = callbacks[0]
 	}
 	parser := NewParser(kind, selected, limits)
+	return driveParserFuzz(&parser, input, segmentation, segmented)
+}
+
+func driveParserFuzz(parser *Parser, input, segmentation []byte, segmented bool) (parserFuzzOutcome, bool) {
 	offset := 0
 	segment := 0
 	code := CodeNone
@@ -737,16 +752,54 @@ func parserFuzzLimits(configuration []byte) Limits {
 	if len(configuration) == 0 {
 		return Limits{MaxStartLineBytes: 1024, MaxHeaderBytes: 4096, MaxBodyBytes: 8192}
 	}
-	at := func(index int) uint64 { return uint64(configuration[index%len(configuration)]) }
+	at := func(index int) byte { return configuration[index%len(configuration)] }
+	limit32 := func(index int, scale uint32) uint32 {
+		switch value := at(index); value {
+		case 255:
+			return ^uint32(0)
+		case 254:
+			return 0
+		default:
+			return 1 + uint32(value)*scale
+		}
+	}
+	limit16 := func(index int) uint16 {
+		switch value := at(index); value {
+		case 255:
+			return ^uint16(0)
+		case 254:
+			return 0
+		default:
+			return 1 + uint16(value)
+		}
+	}
+	limit64 := func(index int, scale uint64) uint64 {
+		switch value := at(index); value {
+		case 255:
+			return ^uint64(0)
+		case 254:
+			return 0
+		default:
+			return 1 + uint64(value)*scale
+		}
+	}
 	return Limits{
-		MaxStartLineBytes:     1 + uint32(at(0))*8,
-		MaxHeaderBytes:        1 + uint32(at(1))*32,
-		MaxChunkLineBytes:     1 + uint32(at(2))*4,
-		MaxChunks:             1 + uint32(at(3)),
-		MaxChunkMetadataBytes: 1 + at(4)*16,
-		MaxHeaders:            1 + uint16(at(5)),
-		MaxHeaderNameBytes:    1 + uint16(at(6)),
-		MaxBodyBytes:          1 + at(7)*64,
+		MaxStartLineBytes:     limit32(0, 8),
+		MaxHeaderBytes:        limit32(1, 32),
+		MaxChunkLineBytes:     limit32(2, 4),
+		MaxChunks:             limit32(3, 1),
+		MaxChunkMetadataBytes: limit64(4, 16),
+		MaxHeaders:            limit16(5),
+		MaxHeaderNameBytes:    limit16(6),
+		MaxBodyBytes:          limit64(7, 64),
+	}
+}
+
+func parserFuzzExpandedLimits() Limits {
+	return Limits{
+		MaxStartLineBytes: ^uint32(0), MaxHeaderBytes: ^uint32(0), MaxChunkLineBytes: ^uint32(0),
+		MaxChunks: ^uint32(0), MaxChunkMetadataBytes: ^uint64(0), MaxHeaders: ^uint16(0),
+		MaxHeaderNameBytes: ^uint16(0), MaxBodyBytes: ^uint64(0),
 	}
 }
 

@@ -229,7 +229,8 @@ type Message struct {
 // reducing accidental reentrant mutation and allowing the parser to remain on
 // stack. A callback must not call Parse, Finish, Reset, or Init on its parser.
 // Because validation is streaming, callbacks can precede a later message error;
-// consumers must commit side effects only from MessageComplete.
+// consumers must commit side effects only from MessageComplete. A callback
+// panic is propagated; callers that recover must Reset the parser before reuse.
 type Callbacks struct {
 	// ResponseContext supplies request method context by exchange number. Any
 	// informational responses and the final response for one request receive the
@@ -561,9 +562,17 @@ func (p *Parser) Parse(src []byte) (n int, code Code) {
 		return 0, p.fail(CodeReentrantCall)
 	}
 	p.parsing = true
+	if p.callbacks != nil {
+		return p.parseWithCallbackGuard(src)
+	}
 	n, code = p.parse(src)
 	p.parsing = false
 	return n, code
+}
+
+func (p *Parser) parseWithCallbackGuard(src []byte) (n int, code Code) {
+	defer func() { p.parsing = false }()
+	return p.parse(src)
 }
 
 func (p *Parser) parse(src []byte) (n int, code Code) {
