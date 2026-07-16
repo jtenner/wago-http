@@ -1,7 +1,6 @@
-// Package http2 provides a strict bounded incremental HTTP/2 frame parser and
-// HPACK decoder, and selectively registers the TCP-backed Wago HTTP/2 plugin.
-// The native protocol core is implemented; guest-visible exchanges remain
-// introspection-only until lifecycle binding lands.
+// Package http2 provides a strict bounded HTTP/2 frame parser, HPACK codec,
+// client/server session engine, and lifecycle-bound Wago guest ABI. Transport
+// dialing, TLS, and ALPN remain caller and wago-org/net responsibilities.
 package http2
 
 import (
@@ -19,16 +18,46 @@ const (
 	ABIVersion1                 = stubabi.ABIVersion1
 )
 
-// Register selects the HTTP/2 capability and its TCP transport requirement.
+// Register selects the HTTP/2 capability, bounded guest session engine, and
+// TCP transport requirement with finite defaults. TLS remains separate.
 func Register(network *wagohttp.Network) error {
+	return RegisterWithOptions(network)
+}
+
+// RegisterWithOptions selects HTTP/2 with explicit guest session bounds.
+func RegisterWithOptions(network *wagohttp.Network, options ...Option) error {
+	config := registerConfig{}
+	for _, option := range options {
+		if option != nil {
+			option.applyHTTP2(&config)
+		}
+	}
+	manager := newABIManager(config)
 	module := plugin.NewModule(
 		plugin.KeyHTTP2,
 		Module,
 		CapHTTP2,
-		"inspect the HTTP/2 capability; native bounded frames and HPACK are implemented and guest exchanges are pending",
+		"use bounded HTTP/2 client and server sessions over capability-gated TCP bytes",
 		plugin.NewTransport(plugin.TransportTCP, func(network *wagonet.Network) error { return nettcp.Register(network) }),
-		plugin.Binding{Name: "abi_version", Func: stubabi.ABIVersion, Results: []wago.ValType{wago.ValI32}, Docs: "return the HTTP/2 scaffold ABI version"},
-		plugin.Binding{Name: "feature_flags", Func: stubabi.FeatureFlags, Results: []wago.ValType{wago.ValI64}, Docs: "return guest-visible HTTP/2 feature bits; zero means lifecycle binding is not implemented"},
-	)
+		plugin.Binding{Name: "abi_version", Func: abiVersion, Results: []wago.ValType{wago.ValI32}, Docs: "return the HTTP/2 ABI version"},
+		plugin.Binding{Name: "feature_flags", Func: abiFeatureFlags, Results: []wago.ValType{wago.ValI64}, Docs: "return implemented HTTP/2 session feature bits"},
+		plugin.Binding{Name: "session_open", Func: manager.sessionOpen, Params: []wago.ValType{wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "create a bounded client or server HTTP/2 session"},
+		plugin.Binding{Name: "session_close", Func: manager.sessionClose, Params: []wago.ValType{wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "close an HTTP/2 session handle"},
+		plugin.Binding{Name: "session_feed", Func: manager.sessionFeed, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "feed received transport bytes into a session"},
+		plugin.Binding{Name: "session_output", Func: manager.sessionOutput, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "drain queued HTTP/2 wire bytes"},
+		plugin.Binding{Name: "stream_open", Func: manager.streamOpen, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "open a client stream with initial headers"},
+		plugin.Binding{Name: "stream_headers", Func: manager.streamHeaders, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "send response headers or trailers"},
+		plugin.Binding{Name: "stream_data", Func: manager.streamData, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "send flow-controlled DATA"},
+		plugin.Binding{Name: "stream_push", Func: manager.streamPush, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "reserve a server-pushed stream"},
+		plugin.Binding{Name: "stream_reset", Func: manager.streamReset, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "reset one stream"},
+		plugin.Binding{Name: "stream_priority_update", Func: manager.streamPriorityUpdate, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "send RFC 9218 priority metadata"},
+		plugin.Binding{Name: "session_settings", Func: manager.sessionSettings, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "send a bounded SETTINGS update"},
+		plugin.Binding{Name: "session_ping", Func: manager.sessionPing, Params: []wago.ValType{wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "send a PING"},
+		plugin.Binding{Name: "session_goaway", Func: manager.sessionGoAway, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "start graceful GOAWAY shutdown"},
+		plugin.Binding{Name: "event_next", Func: manager.eventNext, Params: []wago.ValType{wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "read the next committed session event"},
+		plugin.Binding{Name: "event_data", Func: manager.eventData, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "copy the current event payload"},
+		plugin.Binding{Name: "event_header", Func: manager.eventHeader, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "copy one current-event header field"},
+		plugin.Binding{Name: "event_setting", Func: manager.eventSetting, Params: []wago.ValType{wago.ValI32, wago.ValI32, wago.ValI32}, Results: []wago.ValType{wago.ValI32}, Docs: "copy one current-event setting"},
+	).WithRegistry(manager.configure)
 	return network.RegisterModule(module)
 }

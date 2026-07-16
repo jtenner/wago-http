@@ -1,0 +1,56 @@
+goos: linux
+goarch: amd64
+pkg: github.com/wago-org/http/http2
+cpu: AMD Ryzen 7 8845HS w/ Radeon 780M Graphics     
+BenchmarkSessionPersistentRoundTrip/1         	  210042	      1448 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  192452	      1447 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  199496	      1442 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  214714	      1436 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  207952	      1453 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  192598	      1449 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  206499	      1454 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  190177	      1447 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  190784	      1447 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/1         	  188708	      1469 ns/op	     400 B/op	       4 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   12102	     24522 ns/op	    6406 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   12232	     24203 ns/op	    6406 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   12352	     24713 ns/op	    6406 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   12304	     24583 ns/op	    6406 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   12057	     24762 ns/op	    6406 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   10000	     25056 ns/op	    6407 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   12022	     25162 ns/op	    6406 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   10000	     26365 ns/op	    6407 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   12500	     24971 ns/op	    6406 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/16        	   12188	     24650 ns/op	    6406 B/op	      64 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1545	    242834 ns/op	   40129 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1890	    243808 ns/op	   40106 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1516	    240525 ns/op	   40132 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1747	    243088 ns/op	   40114 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1755	    241145 ns/op	   40114 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1664	    241656 ns/op	   40120 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1586	    240173 ns/op	   40126 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1632	    262697 ns/op	   40123 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1887	    246164 ns/op	   40106 B/op	     400 allocs/op
+BenchmarkSessionPersistentRoundTrip/100       	    1778	    246798 ns/op	   40112 B/op	     400 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   21781	     14100 ns/op	4648.06 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   20608	     14378 ns/op	4557.99 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   21123	     14276 ns/op	4590.66 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   20755	     14144 ns/op	4633.62 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   21141	     14081 ns/op	4654.38 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   21184	     15947 ns/op	4109.50 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   17725	     14317 ns/op	4577.43 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   21439	     13885 ns/op	4720.04 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   21992	     14283 ns/op	4588.27 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/65536    	   21783	     15047 ns/op	4355.32 MB/s	  100987 B/op	     100 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1662	    194275 ns/op	5397.38 MB/s	 1084655 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1219	    237786 ns/op	4409.75 MB/s	 1084885 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1204	    237229 ns/op	4420.10 MB/s	 1084895 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1191	    237910 ns/op	4407.45 MB/s	 1084905 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1224	    236489 ns/op	4433.94 MB/s	 1084881 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1207	    236968 ns/op	4424.97 MB/s	 1084893 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1206	    241112 ns/op	4348.92 MB/s	 1084894 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1141	    235525 ns/op	4452.09 MB/s	 1084943 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1224	    231838 ns/op	4522.88 MB/s	 1084881 B/op	     160 allocs/op
+BenchmarkSessionFlowControlledUpload/1048576  	    1272	    236790 ns/op	4428.29 MB/s	 1084849 B/op	     160 allocs/op
+PASS
+ok  	github.com/wago-org/http/http2	19.987s

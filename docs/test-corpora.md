@@ -43,15 +43,16 @@ Current integration:
 
 1. `http2/hpack_test.go` streams all 47,142 encoded cases from the 478 pinned HPACK JSON stories while preserving story order and compression context. Every encoded case runs contiguously, byte at a time, and under deterministic prime-pattern fragmentation: 141,426 full decoder executions before repository-owned vectors.
 2. `http2/frame_test.go` ports the frame-level h2spec/RFC requirements into deterministic tables covering every standard frame family, extension frames, all fixed-size constraints, stream-zero rules, padding, SETTINGS ranges, self-dependency, WINDOW_UPDATE, continuation interleaving, cumulative header-block limits, continuation quotas, truncation, sticky failures, callback reentrancy, borrowed-span capacity, `ParseOne`, and zero-allocation parsing. Valid frame cases run at every split point and byte at a time.
-3. `http2/request` tests exercise request pseudo-header generation, sensitive fields, large CONTINUATION blocks, maximum initial-window request bodies, informational/final/trailer response sequences, exact stream boundaries, SETTINGS/PING acknowledgements, receive-window replenishment beyond 65,535 bytes, malformed field sections, reset/GOAWAY/push handling, transport short writes, finite body/header limits, and arbitrary read fragmentation.
-4. Structured fuzz targets cover arbitrary frame bytes and limits, valid extension round trips, generated multi-frame continuation sequences, arbitrary HPACK fragments, request validation/encoding, valid response streaming, and adversarial server bytes. Benchmarks span DATA, padding, SETTINGS, continuation-heavy header blocks, unknown frames, frame pipelines, callback overhead, HPACK fragmentation, request header/body scales, and responses through one MiB.
-5. A live h2spec endpoint remains future work for the guest-visible Wago transport binding. The in-process parser and native stream-1 client deliberately keep that lifecycle work separate from wire conformance.
+3. `http2.Session`, `http2/request`, and `http2/server` tests exercise prefaces, SETTINGS synchronization, stream states and identifiers, persistent HPACK contexts, multiplexing, request/response trailers, informational responses, CONNECT, push, priority updates, cancellation, GOAWAY, concurrent flow control, and client/server transfers beyond the initial window. Wago ABI tests cover checked guest memory, handle quotas, operation serialization, lifecycle cleanup, feature reporting, and a complete client/server byte-shuttle exchange.
+4. Structured fuzz targets cover arbitrary frame bytes and limits, valid extension round trips, generated multi-frame continuation sequences, arbitrary HPACK fragments, request validation/encoding, valid response streaming, adversarial server bytes, arbitrary session input fragmentation, and stateful client/server operation sequences. Benchmarks now include persistent multiplexed session round trips and one-MiB flow-controlled uploads in addition to the frame, HPACK, and one-shot request matrices.
+5. `cmd/h2spec-server` and `scripts/run-h2spec.sh` provide a plain-TCP prior-knowledge endpoint for the pinned strict h2spec runner. The audited run currently completes 95 cases with 91 passes, four h2spec-declared skips, and zero failures. It intentionally excludes TLS, which belongs to `wago-org/net`.
 
 Run the HTTP/2 coverage gate and benchmark matrices with:
 
 ```sh
 scripts/check-http2-coverage.sh
-go test ./http2 ./http2/request -run '^$' -bench . -benchmem
+go test ./http2 ./http2/request ./http2/server -run '^$' -bench . -benchmem
+scripts/run-h2spec.sh http2
 ```
 
 ## WebSocket

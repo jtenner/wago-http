@@ -68,6 +68,7 @@ type Module struct {
 	docs       string
 	transport  TransportRegistration
 	bindings   []Binding
+	configure  func(*wago.Registry)
 }
 
 // NewModule constructs a trusted descriptor for one protocol package.
@@ -80,6 +81,13 @@ func NewModule(key Key, module string, capability wago.Capability, docs string, 
 		transport:  transport,
 		bindings:   append([]Binding(nil), bindings...),
 	}
+}
+
+// WithRegistry returns a descriptor that installs protocol-local lifecycle
+// hooks and registration requirements when the module is selected.
+func (m Module) WithRegistry(configure func(*wago.Registry)) Module {
+	m.configure = configure
+	return m
 }
 
 func (m Module) valid() bool {
@@ -115,6 +123,9 @@ func (m Module) RegisterTransport(network *wagonet.Network, selected *Transport)
 
 // Install contributes exactly this protocol's capability and import module.
 func (m Module) Install(registry *wago.Registry) {
+	if m.configure != nil {
+		m.configure(registry)
+	}
 	registry.Capability(m.capability, wago.CapabilityDocs(m.docs))
 	imports := registry.ImportModule(m.module)
 	for _, binding := range m.bindings {

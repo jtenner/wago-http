@@ -42,15 +42,22 @@ type Header struct {
 	Sensitive bool
 }
 
-// Request is one HTTP/2 request on stream 1. Pseudo-fields, Host,
-// Content-Length, and connection-specific fields are writer-managed.
+// Request is one HTTP/2 request. Pseudo-fields, Host, Content-Length, and
+// connection-specific fields are writer-managed. BodyReader, BodyLength,
+// HasBodyLength, Protocol, and Trailers are supported by Transport; the legacy
+// one-shot Client accepts only Body and ordinary requests.
 type Request struct {
-	Method    []byte
-	Scheme    []byte
-	Authority []byte
-	Path      []byte
-	Headers   []Header
-	Body      []byte
+	Method        []byte
+	Scheme        []byte
+	Authority     []byte
+	Path          []byte
+	Protocol      []byte
+	Headers       []Header
+	Body          []byte
+	BodyReader    io.Reader
+	BodyLength    int64
+	HasBodyLength bool
+	Trailers      []Header
 }
 
 // Stream is the connected transport used by Client.
@@ -120,6 +127,9 @@ type Client struct {
 
 // Validate checks request syntax and finite body bounds.
 func (client Client) Validate(request Request) error {
+	if request.BodyReader != nil || request.HasBodyLength || len(request.Trailers) != 0 || len(request.Protocol) != 0 {
+		return &ValidationError{Reason: "streaming bodies, trailers, and extended CONNECT require Transport"}
+	}
 	if !validMethod(request.Method) {
 		return &ValidationError{Reason: "invalid :method"}
 	}

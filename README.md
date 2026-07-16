@@ -3,7 +3,7 @@
 Capability-gated HTTP-family plugins for the [Wago](https://github.com/wago-org/wago) WebAssembly runtime, layered on [wago-org/net](https://github.com/wago-org/net).
 
 > [!WARNING]
-> This repository is experimental. The strict, bounded HTTP/1.0 and HTTP/1.1 parser, HTTP/2 frame parser, bounded HPACK decoder, and native HTTP/1 and HTTP/2 single-exchange clients are implemented. Guest-visible network exchanges, QPACK, WebSocket, HTTP/3, and QUIC data paths are not yet implemented. Every protocol's guest `feature_flags` import therefore still returns zero.
+> This repository is experimental. HTTP/2 now includes a bounded RFC 9113 client/server session engine, persistent multiplexed client transport, non-TLS server endpoint, and guest-visible Wago ABI. HTTP/1 parsing and native exchanges are implemented, but its guest exchange ABI remains pending. QPACK, WebSocket, HTTP/3, and QUIC data paths are not yet implemented. TLS and HTTP/2 ALPN are deliberately owned by `github.com/wago-org/net`, not this repository.
 
 ## Protocol packages
 
@@ -109,7 +109,7 @@ _ = response.Message.Status
 
 ## HTTP/2 frames and HPACK
 
-The `http2` package includes an incremental, allocation-free frame parser for DATA, HEADERS, PRIORITY, RST_STREAM, SETTINGS, PUSH_PROMISE, PING, GOAWAY, WINDOW_UPDATE, CONTINUATION, and extension frames. It validates frame sizes, stream identifiers, padding, fixed fields, SETTINGS values, priority dependencies, continuation sequencing, and bounded cumulative header-block work under arbitrary input fragmentation. Payload callbacks borrow cap-limited input spans.
+The `http2` package includes an incremental, allocation-free frame parser for DATA, HEADERS, PRIORITY, RST_STREAM, SETTINGS, PUSH_PROMISE, PING, GOAWAY, WINDOW_UPDATE, CONTINUATION, and extension frames. It validates frame sizes, stream identifiers, padding, fixed fields, SETTINGS values, priority dependencies, continuation sequencing, and bounded cumulative header-block work under arbitrary input fragmentation. Payload callbacks borrow cap-limited input spans. Above it, `http2.Session` implements persistent client and server connections with SETTINGS negotiation, stream-state enforcement, multiplexing, bidirectional flow control, persistent HPACK contexts, informational responses, trailers, push, CONNECT and extended CONNECT, GOAWAY, cancellation, and RFC 9218 priority updates.
 
 ```go
 parser := http2.NewParser(&http2.Callbacks{
@@ -125,9 +125,9 @@ consumed, code := parser.Parse(input)
 
 `http2.HeaderDecoder` wraps a persistent HPACK compression context with finite dynamic-table, field, header-count, and decoded header-list limits. `BeginBlock`, fragmented `Write` calls, and `EndBlock` preserve dynamic-table state across blocks.
 
-## HTTP/2 requests
+## HTTP/2 clients and servers
 
-The `http2/request` package emits the client connection preface, bounded SETTINGS, HPACK request headers, CONTINUATION frames, and flow-controlled DATA on stream 1. Its synchronous client requires the server's initial SETTINGS frame, acknowledges SETTINGS and PING, replenishes connection and stream receive windows, rejects server push and malformed response field sections, handles informational responses and trailers, and returns exactly at the final stream boundary.
+The `http2/request` package retains a small one-shot stream-1 client and adds `Transport`, a persistent concurrent client over a caller-owned byte stream. `Transport` reuses HPACK state, allocates odd stream IDs, multiplexes concurrent `Do` calls, streams request bodies and trailers under peer flow control, supports cancellation, bounds response bodies and event queues, and optionally accepts server push. The `http2/server` package provides the corresponding non-TLS connection runner, concurrent-safe response writers, streaming responses, push, resets, and writable notifications after WINDOW_UPDATE.
 
 ```go
 response, err := request.Client{}.Do(conn, request.Request{
@@ -142,7 +142,11 @@ response, err := request.Client{}.Do(conn, request.Request{
 })
 ```
 
-The package owns neither dialing nor TLS. The caller must provide an already connected HTTP/2 transport with appropriate ALPN or prior-knowledge negotiation. Request bodies are currently limited to the 65,535-byte initial peer flow-control window because the one-shot client writes the request before reading peer WINDOW_UPDATE frames.
+The packages own neither dialing nor TLS. Callers provide an established byte stream selected through h2c prior knowledge or TLS/ALPN in `github.com/wago-org/net`. The legacy one-shot client remains limited to the initial 65,535-byte send window; `Transport` and `server.Conn` perform concurrent input/output and support bodies and responses larger than the initial window.
+
+## Wago HTTP/2 ABI
+
+Selecting `http2.Register` installs 19 imports in `wago_http2`, reports real feature flags, requires the shared TCP capability, and creates isolated bounded session handles per Wago instance. Guests shuttle wire bytes between `session_output`/`session_feed` and `wago_net_tcp`, use network readiness for polling, and consume typed protocol events for headers, data, settings, resets, GOAWAY, push, and flow-control updates. Instance and runtime lifecycle hooks deterministically release all sessions. The complete v1 memory layouts, signatures, status behavior, and connection sequence are documented in [`docs/http2-abi-v1.md`](docs/http2-abi-v1.md).
 
 ## Architecture direction
 
@@ -153,11 +157,11 @@ The structure follows `wago-org/net`'s selective plugin model:
 - registration freezes before Wago sees the extension;
 - required TCP and UDP transports are installed once regardless of protocol order;
 - unselected HTTP protocol modules are absent from the guest import surface;
-- placeholder host calls are fixed-shape and allocation-free;
+- guest imports use fixed memory layouts, checked ranges, bounded handle tables, and deterministic lifecycle cleanup;
 - the HTTP/1 and HTTP/2 parsers use finite counters, borrowed spans, sticky failures, and no parser-owned payload buffers;
-- the HPACK and request layers impose explicit dynamic-table, header-list, body, frame, continuation, and flow-control bounds.
+- the HTTP/2 session, HPACK, client, server, and ABI layers impose explicit stream, dynamic-table, header-list, body, frame, continuation, output, event, and control-frame bounds.
 
-The next implementation stages should preserve compile-time protocol isolation and bind the tested HTTP/1 and HTTP/2 state machines to finite per-instance `wago-org/net` resources before implementing the independently selectable WebSocket and HTTP/3 paths.
+The remaining protocol work is the HTTP/1 guest exchange ABI and the independently selectable WebSocket and HTTP/3 paths. TLS sockets, certificate policy, and ALPN negotiation remain a separate `wago-org/net` responsibility.
 
 ## Conformance corpora
 
@@ -167,7 +171,7 @@ Pinned opportunities for HTTP/1.1, HTTP/2 and HPACK, WebSocket, HTTP/3, QPACK, a
 scripts/fetch-test-corpora.sh
 ```
 
-No third-party corpus is vendored by default. When the pinned checkouts are present, `go test ./http` automatically runs RFC-audited adapters for llhttp, picohttpparser, and httparse—each fixture at every input split point. `go test ./http2` additionally runs all 47,142 encoded cases from the pinned HPACK interoperability corpus under contiguous, byte-at-a-time, and patterned fragmentation. Repository-owned HTTP/2 tests cover every frame family, continuation sequencing, SETTINGS, padding, stream identifiers, resource limits, truncation, callback safety, lifecycle, request/response streaming, control-frame acknowledgements, flow control, fuzzing, benchmarks, and allocation behavior.
+No third-party corpus is vendored by default. When the pinned checkouts are present, `go test ./http` automatically runs RFC-audited adapters for llhttp, picohttpparser, and httparse—each fixture at every input split point. `go test ./http2` additionally runs all 47,142 encoded cases from the pinned HPACK interoperability corpus under contiguous, byte-at-a-time, and patterned fragmentation. Repository-owned HTTP/2 tests cover every frame family, connection and stream state, SETTINGS, padding, stream identifiers, resource limits, lifecycle, multiplexed client/server exchanges, large flow-controlled bodies, Wago ABI cleanup, fuzzing, benchmarks, and allocation behavior. `scripts/run-h2spec.sh http2` starts the included prior-knowledge endpoint and runs the pinned strict h2spec suite; TLS is not involved.
 
 ## Development
 

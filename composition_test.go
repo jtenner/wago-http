@@ -31,7 +31,7 @@ func TestSelectiveRegistrationSurfaces(t *testing.T) {
 		{
 			name: "http2", register: []registration{http2.Register},
 			capabilities: []wago.Capability{wagonet.CapInfo, wagonet.CapTCP, wagohttp.CapInfo, http2.CapHTTP2},
-			imports:      map[string]int{wagonet.Module: 1, wagonet.TCPModule: 11, wagohttp.Module: 1, http2.Module: 2},
+			imports:      map[string]int{wagonet.Module: 1, wagonet.TCPModule: 11, wagohttp.Module: 1, http2.Module: 19},
 		},
 		{
 			name: "websocket", register: []registration{websocket.Register},
@@ -51,7 +51,7 @@ func TestSelectiveRegistrationSurfaces(t *testing.T) {
 			},
 			imports: map[string]int{
 				wagonet.Module: 1, wagonet.TCPModule: 11, wagonet.UDPModule: 6,
-				wagohttp.Module: 1, http1.Module: 2, http2.Module: 2, websocket.Module: 2, http3.Module: 2,
+				wagohttp.Module: 1, http1.Module: 2, http2.Module: 19, websocket.Module: 2, http3.Module: 2,
 			},
 		},
 	}
