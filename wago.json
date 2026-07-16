@@ -1,0 +1,24 @@
+{
+  "schema": "wago-plugin/v1",
+  "module": "github.com/wago-org/http",
+  "name": "Wago HTTP Protocols",
+  "version": "0.0.0",
+  "description": "Experimental capability-gated HTTP/1.1, HTTP/2, WebSocket, and HTTP/3 plugins for Wago, layered on wago-org/net.",
+  "stability": "experimental",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/wago-org/http",
+  "repository": "https://github.com/wago-org/http",
+  "authors": ["The wago authors"],
+  "private": true,
+  "keywords": [
+    "http",
+    "http2",
+    "http3",
+    "websocket",
+    "wago",
+    "wasm"
+  ],
+  "engines": {
+    "wago": "0.1.0"
+  }
+}

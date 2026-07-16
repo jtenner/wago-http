@@ -1,0 +1,7 @@
+# name|repository|revision|license|purpose
+llhttp|https://github.com/nodejs/llhttp.git|01e105a30fd06e248bc8ac73c4adb34a63d4114a|MIT|HTTP/1 request and response parser fixtures plus fuzz harnesses
+h2spec|https://github.com/summerwind/h2spec.git|af83a65f0b6273ef38bf778d400d98892e7653d8|MIT|HTTP/2 and HPACK wire conformance runner
+hpack-test-case|https://github.com/http2jp/hpack-test-case.git|8a1406e7d14bfcb6c046021f13cc15cfb162726d|MIT|HPACK encoder and decoder interoperability stories
+autobahn-testsuite|https://github.com/crossbario/autobahn-testsuite.git|b8a5120d905e30470e4475785c48e4cedc35f6cd|Apache-2.0|RFC 6455 client and server conformance cases
+quic-interop-runner|https://github.com/quic-interop/quic-interop-runner.git|1d6f6554ac8e3b7c4cca0e3d40fd69f661420673|Apache-2.0|QUIC and HTTP/3 endpoint interoperability scenarios
+nghttp3|https://github.com/ngtcp2/nghttp3.git|5621d4831117e4e88bb2b3b5302492eba19c1648|MIT|HTTP/3 and QPACK unit tests and fuzz seeds

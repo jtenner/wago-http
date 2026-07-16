@@ -1,0 +1,6 @@
+github.com/soypat/lneto v0.0.0-20260710133615-ab1a0c735a8b h1:qcoYcwWsFVI7zu0SRqhGD+B07R8o+sLFHwZQ/LtsHkM=
+github.com/soypat/lneto v0.0.0-20260710133615-ab1a0c735a8b/go.mod h1:Be5PjwoYukvHFiUXxpYi8+ppH2F/gw/vjGBvFdv+Ti8=
+github.com/wago-org/net v0.0.0-20260715213005-af1aae3dad77 h1:Ksa9qrT46EXwTOm/EHdTzW8copWzC+7AVXMoH126UIQ=
+github.com/wago-org/net v0.0.0-20260715213005-af1aae3dad77/go.mod h1:7ljdp6HNpnlRl36oiEGjFipAicno1v1j7AJGqRURiQ8=
+github.com/wago-org/wago v0.0.0-20260711052758-97e6f91e6c82 h1:MrHybtwiZSncmf/MUwaWZTiUw/4EUi0BoQsQuq3//Vk=
+github.com/wago-org/wago v0.0.0-20260711052758-97e6f91e6c82/go.mod h1:d44S+59u6VHeqEaIZBKTeB8viyswTP97O9IKA6Gyzc4=

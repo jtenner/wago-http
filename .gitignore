@@ -1,0 +1,16 @@
+# Go build and test artifacts
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+
+# Local dependency and research checkouts
+.reference-*/
+.research/
+
+# Imported upstream conformance corpora
+testdata/upstream/
+
+# Wago local artifacts
+.wago/
