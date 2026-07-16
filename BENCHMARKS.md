@@ -1,6 +1,6 @@
 # HTTP/2 Performance Baseline
 
-This document records the comprehensive performance baseline for the native HTTP/2 frame parser, HPACK decoder, one-shot request client, and persistent connection session. Machine-readable output is committed at [`benchmarks/http2-baseline-2026-07-16.txt`](benchmarks/http2-baseline-2026-07-16.txt) and [`benchmarks/http2-session-baseline-2026-07-16.txt`](benchmarks/http2-session-baseline-2026-07-16.txt).
+This document records the comprehensive performance baseline for the native HTTP/2 frame parser, HPACK decoder, one-shot request client, persistent session engine, multiplexed transport, retry pool, and server response path. Machine-readable output is committed under `benchmarks/` in the frame/request, session, and connection baseline files dated July 16, 2026.
 
 ## Baseline identity
 
@@ -8,20 +8,21 @@ This document records the comprehensive performance baseline for the native HTTP
 |---|---|
 | Date | July 16, 2026 |
 | Frame/HPACK/one-shot source revision | `82eb203ef44cd2635c64a82e4a34ee38ae8397c3` |
-| Persistent-session source revision | `afbd9e1` |
+| Persistent session/transport/server source revision | `17a77db2b6dc9be266e5fed7add988c19d1562c3` |
 | Frame/HPACK/one-shot raw SHA-256 | `74699dc9da22eb5d7299fd4382f65eef1fcdfaecb48d66fc01224da1bb33e33f` |
-| Persistent-session raw SHA-256 | `4a9851d927cdd6a3417d378c4a90f13202b9ffbeaf261ae6c4a520affa982235` |
+| Persistent-session raw SHA-256 | `029da2f392c59a8dbea66b4a93265597f75a708046ad0924daa3099626641ded` |
+| Transport/server raw SHA-256 | `75ab5e5ac825a4d18d04f5bfdb45b0a69e0714b44a570958f5c5e3490d4dc120` |
 | OS | Debian GNU/Linux, Linux `6.12.95+deb13-amd64` |
 | Architecture | `linux/amd64`, `GOAMD64=v1`, CGO enabled |
 | CPU | AMD Ryzen 7 8845HS, 8 cores / 16 threads, up to 5.1 GHz |
 | Cache | 256 KiB L1d, 256 KiB L1i, 8 MiB L2, 16 MiB L3 |
 | Go | `go1.24.4 linux/amd64` |
 | Scheduling | CPU affinity fixed to logical CPU 4; `GOMAXPROCS=1` |
-| Samples | 10 per benchmark; 840 total samples across 84 scenarios |
+| Samples | 10 per benchmark; 920 total samples across 92 scenarios |
 | Target duration | 250 ms per sample |
 | Race/checkptr | Disabled for performance run |
 
-Command:
+Commands below are run sequentially at the corresponding source revision shown above; running pinned commands concurrently on the same affinity CPU invalidates the comparison.
 
 ```sh
 taskset -c 4 env GOMAXPROCS=1 \
@@ -33,6 +34,12 @@ taskset -c 4 env GOMAXPROCS=1 \
   go test ./http2 -run '^$' -bench '^BenchmarkSession' \
   -benchmem -benchtime=250ms -count=10 \
   | tee benchmarks/http2-session-baseline-2026-07-16.txt
+
+taskset -c 4 env GOMAXPROCS=1 \
+  go test ./http2/request ./http2/server -run '^$' \
+  -bench 'Benchmark(Transport|Pool|Server)' \
+  -benchmem -benchtime=250ms -count=10 \
+  | tee benchmarks/http2-connection-baseline-2026-07-16.txt
 ```
 
 The tables report the median of ten samples. The range column preserves the observed minimum and maximum so future comparisons can distinguish likely signal from machine noise. `MB/s` is emitted by Go from each benchmark's declared wire-byte count.
@@ -129,11 +136,24 @@ The tables report the median of ten samples. The range column preserves the obse
 
 | Benchmark | Median | Observed range | Median MB/s | B/op | allocs/op |
 |---|---:|---:|---:|---:|---:|
-| `SessionPersistentRoundTrip/1` | 1.448 µs | 1.436–1.469 µs | — | 400 | 4 |
-| `SessionPersistentRoundTrip/16` | 24.738 µs | 24.203–26.365 µs | — | 6,406 | 64 |
-| `SessionPersistentRoundTrip/100` | 242.961 µs | 240.173–262.697 µs | — | 40,117 | 400 |
-| `SessionFlowControlledUpload/65536` | 14.280 µs | 13.885–15.947 µs | 4,589.5 | 100,987 | 100 |
-| `SessionFlowControlledUpload/1048576` | 236.879 µs | 194.275–241.112 µs | 4,426.6 | 1,084,889 | 160 |
+| `SessionPersistentRoundTrip/1` | 1.436 µs | 1.430–1.455 µs | — | 400 | 4 |
+| `SessionPersistentRoundTrip/16` | 25.012 µs | 24.574–25.565 µs | — | 6,406 | 64 |
+| `SessionPersistentRoundTrip/100` | 252.807 µs | 240.238–260.186 µs | — | 40,131 | 400 |
+| `SessionFlowControlledUpload/65536` | 9.760 µs | 9.116–10.296 µs | 6,721.0 | 65,938 | 8 |
+| `SessionFlowControlledUpload/1048576` | 149.734 µs | 137.960–159.053 µs | 7,003.5 | 1,049,001 | 68 |
+
+## Persistent transport, retry pool, and server
+
+| Benchmark | Median | Observed range | Median MB/s | B/op | allocs/op |
+|---|---:|---:|---:|---:|---:|
+| `TransportPersistent/sequential` | 13.588 µs | 13.353–13.986 µs | — | 3,635 | 17 |
+| `TransportPersistent/concurrent-16` | 9.598 µs | 9.285–9.814 µs | — | 3,906 | 13 |
+| `PoolReuse` | 12.949 µs | 12.811–13.063 µs | — | 3,635 | 17 |
+| `TransportFlowControlledUpload/65536` | 75.213 µs | 73.645–81.002 µs | 871.3 | 72,273 | 43 |
+| `TransportFlowControlledUpload/1048576` | 976.558 µs | 952.380–998.984 µs | 1,073.8 | 1,094,472 | 405 |
+| `ServerPersistentResponses/1` | 1.853 µs | 1.818–1.919 µs | — | 416 | 5 |
+| `ServerPersistentResponses/16` | 26.101 µs | 25.611–28.670 µs | — | 6,671 | 80 |
+| `ServerPersistentResponses/100` | 259.978 µs | 241.957–283.217 µs | — | 41,786 | 500 |
 
 ## Interpretation notes
 
@@ -141,7 +161,10 @@ The tables report the median of ten samples. The range column preserves the obse
 - Frame parsing, malformed-frame rejection, `ParseOne`, and preallocated `AppendFrame` remain at **0 B/op and 0 allocs/op** in the sustained baseline.
 - HPACK numbers include decoded string and field emission costs. The benchmark preserves compression context across repeated blocks, matching a long-lived HTTP/2 connection.
 - Request `Append`, `Encode`, and `Write` include HPACK encoder construction. `Encode` intentionally creates the complete validated wire image before copying into the caller's destination.
-- Streaming-client benchmarks are in-memory end-to-end exchanges. They include request encoding, frame parsing, HPACK response decoding, SETTINGS acknowledgement, and DATA flow-control WINDOW_UPDATE writes, but exclude sockets, TLS, ALPN, kernel scheduling, and real network latency.
+- One-shot streaming-client benchmarks are in-memory end-to-end exchanges. They include request encoding, frame parsing, HPACK response decoding, SETTINGS acknowledgement, and DATA flow-control WINDOW_UPDATE writes, but exclude sockets, TLS, ALPN, kernel scheduling, and real network latency.
+- Persistent session benchmarks reuse one negotiated connection and compression context. Their upload allocation totals include retained DATA event copies; the large reduction from the earlier setup-per-operation measurements comes from removing connection construction from the timed loop.
+- Transport and pool benchmarks use one persistent loopback TCP connection and therefore include goroutine scheduling, kernel socket I/O, client/server framing, and response routing, but still exclude TLS and external network latency. `concurrent-16` maintains sixteen outstanding worker goroutines even with `GOMAXPROCS=1`, measuring multiplexing and blocked-I/O scheduling rather than multicore scaling.
+- The transport's default per-exchange event queue is 16 entries, down from 128, and request-body scratch buffers are reused. The sequential empty-response path consequently retains about 3.6 KiB/op rather than roughly 18 KiB/op.
 - Read sizes of 1, 64, 1,024, and 16,384 bytes model extreme fragmentation through normal buffered delivery. Callback variants include body callback dispatch but do not copy body data.
 - Some ranges show frequency or thermal transitions during this approximately five-minute run. Use the committed ten-sample raw file with `benchstat` rather than comparing one isolated sample.
 
@@ -153,6 +176,8 @@ The tables report the median of ten samples. The range column preserves the obse
 
    ```sh
    benchstat benchmarks/http2-baseline-2026-07-16.txt benchmarks/http2-candidate-YYYY-MM-DD.txt
+   benchstat benchmarks/http2-session-baseline-2026-07-16.txt benchmarks/http2-session-candidate-YYYY-MM-DD.txt
+   benchstat benchmarks/http2-connection-baseline-2026-07-16.txt benchmarks/http2-connection-candidate-YYYY-MM-DD.txt
    ```
 
 4. Treat parser allocation regressions as failures. For request and HPACK paths, review both latency and allocation deltas.
