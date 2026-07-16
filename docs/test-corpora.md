@@ -39,12 +39,20 @@ Candidates:
 - `summerwind/h2spec` (MIT), a runnable server conformance tool with frame, stream state, flow control, settings, error handling, message exchange, and HPACK cases. It targets RFC 7540, so each test must be audited against RFC 9113 before becoming normative.
 - `http2jp/hpack-test-case` (MIT), 478 pinned JSON interoperability stories from multiple HPACK encoders, including Huffman and dynamic-table strategies.
 
-Integration direction:
+Current integration:
 
-1. Import HPACK JSON through a streaming test loader and preserve story order because cases share compression context.
-2. Build an in-process h2spec adapter once a server endpoint exists; until then, port frame/state-machine cases into deterministic table tests.
-3. Add RFC 9113-specific deltas, continuation sequencing, pseudo-header validation, stream-state transitions, flow-control overflow, SETTINGS synchronization, GOAWAY boundaries, and adversarial HPACK integer/Huffman inputs.
-4. Run every frame parser under all input split points and enforce finite frame, header-list, dynamic-table, stream, and queued-byte limits.
+1. `http2/hpack_test.go` streams all 47,142 encoded cases from the 478 pinned HPACK JSON stories while preserving story order and compression context. Every encoded case runs contiguously, byte at a time, and under deterministic prime-pattern fragmentation: 141,426 full decoder executions before repository-owned vectors.
+2. `http2/frame_test.go` ports the frame-level h2spec/RFC requirements into deterministic tables covering every standard frame family, extension frames, all fixed-size constraints, stream-zero rules, padding, SETTINGS ranges, self-dependency, WINDOW_UPDATE, continuation interleaving, cumulative header-block limits, continuation quotas, truncation, sticky failures, callback reentrancy, borrowed-span capacity, `ParseOne`, and zero-allocation parsing. Valid frame cases run at every split point and byte at a time.
+3. `http2/request` tests exercise request pseudo-header generation, sensitive fields, large CONTINUATION blocks, maximum initial-window request bodies, informational/final/trailer response sequences, exact stream boundaries, SETTINGS/PING acknowledgements, receive-window replenishment beyond 65,535 bytes, malformed field sections, reset/GOAWAY/push handling, transport short writes, finite body/header limits, and arbitrary read fragmentation.
+4. Structured fuzz targets cover arbitrary frame bytes and limits, valid extension round trips, generated multi-frame continuation sequences, arbitrary HPACK fragments, request validation/encoding, valid response streaming, and adversarial server bytes. Benchmarks span DATA, padding, SETTINGS, continuation-heavy header blocks, unknown frames, frame pipelines, callback overhead, HPACK fragmentation, request header/body scales, and responses through one MiB.
+5. A live h2spec endpoint remains future work for the guest-visible Wago transport binding. The in-process parser and native stream-1 client deliberately keep that lifecycle work separate from wire conformance.
+
+Run the HTTP/2 coverage gate and benchmark matrices with:
+
+```sh
+scripts/check-http2-coverage.sh
+go test ./http2 ./http2/request -run '^$' -bench . -benchmem
+```
 
 ## WebSocket
 

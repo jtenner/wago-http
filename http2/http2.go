@@ -1,6 +1,7 @@
-// Package http2 selectively registers the HTTP/2 Wago plugin scaffold.
-// The selected module reserves a TCP-backed capability and exposes only
-// allocation-free ABI/feature introspection until frames and HPACK land.
+// Package http2 provides a strict bounded incremental HTTP/2 frame parser and
+// HPACK decoder, and selectively registers the TCP-backed Wago HTTP/2 plugin.
+// The native protocol core is implemented; guest-visible exchanges remain
+// introspection-only until lifecycle binding lands.
 package http2
 
 import (
@@ -24,10 +25,10 @@ func Register(network *wagohttp.Network) error {
 		plugin.KeyHTTP2,
 		Module,
 		CapHTTP2,
-		"inspect and, when implemented, use bounded HTTP/2 streams",
+		"inspect the HTTP/2 capability; native bounded frames and HPACK are implemented and guest exchanges are pending",
 		plugin.NewTransport(plugin.TransportTCP, func(network *wagonet.Network) error { return nettcp.Register(network) }),
 		plugin.Binding{Name: "abi_version", Func: stubabi.ABIVersion, Results: []wago.ValType{wago.ValI32}, Docs: "return the HTTP/2 scaffold ABI version"},
-		plugin.Binding{Name: "feature_flags", Func: stubabi.FeatureFlags, Results: []wago.ValType{wago.ValI64}, Docs: "return implemented HTTP/2 feature bits; zero means the data path is not implemented"},
+		plugin.Binding{Name: "feature_flags", Func: stubabi.FeatureFlags, Results: []wago.ValType{wago.ValI64}, Docs: "return guest-visible HTTP/2 feature bits; zero means lifecycle binding is not implemented"},
 	)
 	return network.RegisterModule(module)
 }
